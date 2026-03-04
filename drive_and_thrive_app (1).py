@@ -6,15 +6,13 @@ import plotly.express as px
 # =========================
 # 0. DATA DIRECTORY
 # =========================
-# Adjust this path to wherever your Excel files actually live.
-# Example: data folder next to this script.
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, "data")
+# Use the working directory directly (where this script runs).
+SCRIPT_DIR = os.getcwd()
+DATA_DIR = SCRIPT_DIR  # Excel files live right next to the .py file
 
-# Optional: show where we are and what files exist
 st.write("Working directory:", SCRIPT_DIR)
 st.write("Data directory:", DATA_DIR)
-st.write("Data files:", os.listdir(DATA_DIR) if os.path.isdir(DATA_DIR) else "NO DATA DIR FOUND")
+st.write("Data files:", os.listdir(DATA_DIR))
 
 # =========================
 # 1. BRANDING & UI CONFIG
