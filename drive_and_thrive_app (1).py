@@ -1,79 +1,113 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import re
 
-# --- 1. SETTINGS ---
+# --- 1. SETTINGS & STYLING ---
 st.set_page_config(page_title="MASSEY STRATEGIC CAPITAL", layout="wide")
+st.markdown("""
+<style>
+    html, body, [class*="st-at"] { background-color: #0B0E14; color: #E2E8F0; }
+    div[data-testid="stMetric"] { background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 20px !important; }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 2. DATA ENGINES (READ/WRITE) ---
-def load_data(file, sheet, skip=0):
+# --- 2. THE DATA ENGINES (READ/WRITE) ---
+def load_excel_data(file, sheet, skip=0):
     try:
         df = pd.read_excel(file, sheet_name=sheet, skiprows=skip)
+        # Ensure all column names are clean
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except:
-        return pd.DataFrame()
+        # Create a default structure if the file isn't found
+        return pd.DataFrame(columns=["Date", "Gross Earnings", "Daily Goal", "Hours Worked"])
 
-def save_data(df, file, sheet):
-    # This function writes your changes back to the Excel file
-    with pd.ExcelWriter(file, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-        df.to_excel(writer, sheet_name=sheet, index=False)
-
-# --- 3. DATA SYNC ---
-# We load the data into "Session State" so it stays editable while you use the app
-if 'cards' not in st.session_state:
-    st.session_state.cards = load_data("Terrance Credit Card 1.xlsx", "Credit Cards", 1)
-if 'bills' not in st.session_state:
-    st.session_state.bills = load_data("Terrance Credit Card 1.xlsx", "Bill Master List", 1)
-if 'uber' not in st.session_state:
-    st.session_state.uber = load_data("Terrance Uber Tracker.xlsx", "March", 3)
+# --- 3. PERSISTENT STATE ---
+# This keeps your edits alive while you switch between tabs
+if 'cards_data' not in st.session_state:
+    st.session_state.cards_data = load_excel_data("Terrance Credit Card 1.xlsx", "Credit Cards", 1)
+if 'bills_data' not in st.session_state:
+    st.session_state.bills_data = load_excel_data("Terrance Credit Card 1.xlsx", "Bill Master List", 1)
+if 'uber_data' not in st.session_state:
+    st.session_state.uber_data = load_excel_data("Terrance Uber Tracker.xlsx", "March", 3)
 
 # --- 4. THE COMMAND CENTER ---
 st.title("🏛️ Massey Strategic Capital Terminal")
-st.caption("Live-Editable Portfolio Management")
+st.caption("Live Operational Command & Financial Arbitrage")
 
 tabs = st.tabs(["📊 DASHBOARD", "💳 MANAGE CARDS", "📅 MANAGE BILLS", "🚖 UBER LEDGER"])
 
-with tabs[1]:
-    st.subheader("Edit Credit Cards & Limits")
-    st.info("Directly edit cells below. Add a new row at the bottom to add a card.")
-    # The magic "Data Editor" component
-    edited_cards = st.data_editor(st.session_state.cards, num_rows="dynamic", use_container_width=True)
-    if st.button("Save Card Changes"):
-        st.session_state.cards = edited_cards
-        # save_data(edited_cards, "Terrance Credit Card 1.xlsx", "Credit Cards")
-        st.success("Card portfolio updated!")
+# --- TAB: UBER LEDGER (THE EDITING SUITE) ---
+with tabs[3]:
+    st.subheader("Daily Performance Entry")
+    st.write("Click any cell to edit. Use the **(+)** at the bottom to add a new day of work.")
+    
+    # We enable 'num_rows="dynamic"' so you can add/delete rows
+    edited_uber = st.data_editor(
+        st.session_state.uber_data, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="uber_editor"
+    )
+    
+    if st.button("💾 Commit Uber Entries"):
+        st.session_state.uber_data = edited_uber
+        st.success("Uber Ledger updated in terminal memory!")
 
+# --- TAB: MANAGE CARDS ---
+with tabs[1]:
+    st.subheader("Edit Card Portfolio")
+    edited_cards = st.data_editor(
+        st.session_state.cards_data, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="cards_editor"
+    )
+    if st.button("💾 Commit Portfolio Changes"):
+        st.session_state.cards_data = edited_cards
+        st.success("Card data updated!")
+
+# --- TAB: MANAGE BILLS ---
 with tabs[2]:
-    st.subheader("Edit Bill Master List")
-    edited_bills = st.data_editor(st.session_state.bills, num_rows="dynamic", use_container_width=True)
-    if st.button("Save Bill Changes"):
-        st.session_state.bills = edited_bills
+    st.subheader("Edit Bill Schedule")
+    edited_bills = st.data_editor(
+        st.session_state.bills_data, 
+        num_rows="dynamic", 
+        use_container_width=True,
+        key="bills_editor"
+    )
+    if st.button("💾 Commit Bill Changes"):
+        st.session_state.bills_data = edited_bills
         st.success("Bill schedule updated!")
 
-with tabs[3]:
-    st.subheader("Edit Uber Performance")
-    edited_uber = st.data_editor(st.session_state.uber, num_rows="dynamic", use_container_width=True)
-    if st.button("Save Uber Entry"):
-        st.session_state.uber = edited_uber
-        st.success("Earnings ledger updated!")
-
+# --- TAB: DASHBOARD (THE CALCULATION ENGINE) ---
 with tabs[0]:
-    # This dashboard now updates INSTANTLY when you edit the tabs above
-    c = st.session_state.cards
-    u = st.session_state.uber
+    # We perform math ONLY on valid numbers to prevent crashes
+    u_df = st.session_state.uber_data.copy()
+    c_df = st.session_state.cards_data.copy()
     
-    # Auto-calculations for the main screen
-    total_bal = pd.to_numeric(c.iloc[:, 1], errors='coerce').sum() # Assuming Balance is 2nd col
-    total_lim = pd.to_numeric(c.iloc[:, 2], errors='coerce').sum() # Assuming Limit is 3rd col
+    # Scrubbing data for math
+    u_df['Gross Earnings'] = pd.to_numeric(u_df['Gross Earnings'], errors='coerce').fillna(0)
+    u_df['Daily Goal'] = pd.to_numeric(u_df['Daily Goal'], errors='coerce').fillna(0)
+    u_df['Variance'] = u_df['Gross Earnings'] - u_df['Daily Goal']
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("TOTAL LIABILITIES", f"${total_bal:,.2f}")
-    col2.metric("AVAILABLE CREDIT", f"${(total_lim - total_bal):,.2f}")
-    col3.metric("UTILIZATION", f"{(total_bal/total_lim)*100:.1f}%" if total_lim > 0 else "0%")
+    c_df['Balance'] = pd.to_numeric(c_df.iloc[:, 1], errors='coerce').fillna(0)
+    c_df['Limit'] = pd.to_numeric(c_df.iloc[:, 2], errors='coerce').fillna(0)
     
+    # Display Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("TOTAL LIABILITIES", f"${c_df['Balance'].sum():,.2f}")
+    col2.metric("AVAILABLE CREDIT", f"${(c_df['Limit'].sum() - c_df['Balance'].sum()):,.2f}")
+    
+    latest_var = u_df['Variance'].iloc[-1] if not u_df.empty else 0
+    col3.metric("LATEST VARIANCE", f"${latest_var:+,.2f}", delta_color="normal" if latest_var >= 0 else "inverse")
+    
+    total_mtd = u_df['Variance'].sum()
+    col4.metric("MTD SURPLUS", f"${total_mtd:,.2f}")
+
     st.divider()
-    # Dynamic Liquidity Chart
-    fig = px.bar(c, x=c.columns[0], y=c.columns[1], title="Debt by Institution", template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+    
+    # Visualizing the Edit results
+    if not u_df.empty:
+        fig = px.line(u_df, x=u_df.columns[0], y='Gross Earnings', title="Revenue Velocity", template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
