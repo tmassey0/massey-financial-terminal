@@ -45,20 +45,27 @@ if cards_df is not None:
     m3.metric("MONTHLY BURN", f"${monthly_burn:,.2f}")
     m4.metric("TARGET APR", "35.9%")
 
-    st.divider()
+st.divider()
     tabs = st.tabs(["📊 PERFORMANCE", "💳 LIABILITY MATRIX", "📅 OPERATIONS"])
 
     with tabs[0]:
+        st.subheader("Revenue Velocity vs. Liability Reduction")
+        # Logic for the projection chart
         projection = [total_liabilities - (i * 1344) for i in range(5)]
-        fig = go.Figure(go.Scatter(x=['MAR', 'APR', 'MAY', 'JUN', 'JUL'], y=[max(0, p) for p in projection], fill='tozeroy'))
+        months = ['MAR', 'APR', 'MAY', 'JUN', 'JUL']
+        fig = go.Figure(go.Scatter(x=months, y=[max(0, p) for p in projection], fill='tozeroy', line=dict(color='#0EA5E9')))
         fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
 
     with tabs[1]:
+        st.subheader("Credit Portfolio Risk Analysis")
         cards_df['Util %'] = (cards_df['Total Current Balance'] / cards_df['Credit Limit']) * 100
+        # High-end table display
         st.table(cards_df[['Bank Name', 'Total Current Balance', 'Credit Limit', 'Util %']])
 
-        with tabs[2]:
-           with st.dataframe(bills_df[bills_df['Active'] == 'Yes'].sort_values('Due Day')[['Bill Name', 'Amount', 'Due Day']])
+    with tabs[2]:
+        st.subheader("Upcoming Operational Outflows")
+        # This is where your error was—the line below is now properly indented
+        st.dataframe(bills_df[bills_df['Active'] == 'Yes'].sort_values('Due Day')[['Bill Name', 'Amount', 'Due Day']])
 else:
-    st.warning("Please upload your CSV files to GitHub to populate the terminal.")
+    st.warning("Data Feeds Not Detected. Please ensure CSV files are uploaded to your GitHub repository.")
