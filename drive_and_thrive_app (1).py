@@ -1,603 +1,169 @@
 import streamlit as st
 import pandas as pd
-import os
 import datetime
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
-# --- SIMPLE CUSTOM CSS ---
-st.markdown("""
-<style>
-    div[data-testid="stMetric"] { 
-        background-color: #161B22; 
-        border: 1px solid #30363D; 
-        border-radius: 8px; 
-        padding: 20px; 
-    }
-    .stButton button {
-        width: 100%;
-    }
-    .dashboard-header {
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin-bottom: 1rem;
-        color: #FFD700;
-        cursor: pointer;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- CHECK AVAILABLE FILES ---
-st.sidebar.header("📁 Data Files")
-files = os.listdir()
-st.sidebar.write("Files in directory:", files)
-
-# --- SIMPLE DATA LOADING FUNCTION ---
-@st.cache_data
-def load_excel_file(file_path, sheet_name):
-    try:
-        if os.path.exists(file_path):
-            df = pd.read_excel(file_path, sheet_name=sheet_name)
-            # Filter out rows where first column is empty or starts with "Unnamed"
-            if not df.empty:
-                first_col = df.columns[0]
-                df = df[df[first_col].notna() & (~df[first_col].astype(str).str.startswith('Unnamed'))]
-            return df
-        else:
-            st.sidebar.error(f"File not found: {file_path}")
-            return pd.DataFrame()
-    except Exception as e:
-        st.sidebar.error(f"Error loading {file_path}: {e}")
-        return pd.DataFrame()
-
-# --- SAFE DATAFRAME CHECK FUNCTION ---
-def safe_df_check(df):
-    """Safely check if a variable is a non-empty DataFrame"""
-    return df is not None and isinstance(df, pd.DataFrame) and not df.empty
-
-# --- LOAD DATA ---
-# Credit Card Data - Filter out empty rows
+# --- INITIALIZE SESSION STATE WITH SAMPLE DATA ---
 if 'cards_df' not in st.session_state:
-    cards_df = load_excel_file("Terrance Credit Card 1.xlsx", "Credit Cards")
-    if not cards_df.empty:
-        # Keep only active cards (where first column has actual Card IDs)
-        cards_df = cards_df[cards_df.iloc[:, 0].notna()]
-        cards_df = cards_df[~cards_df.iloc[:, 0].astype(str).str.contains('Card6|Card7|Card8|Card9|Card10|Card11|Card12|Card13|Card14|Card15', na=False)]
-        st.session_state.cards_df = cards_df
-    else:
-        st.session_state.cards_df = pd.DataFrame()
+    st.session_state.cards_df = pd.DataFrame({
+        'Card': ['Card1', 'Card2', 'Card3', 'Card4', 'Card5'],
+        'Bank': ['Navy Federal', 'Indigo 3069', 'Indigo 1448', 'Milestone 5093', 'Destiny 3992'],
+        'Limit': [1500, 500, 1000, 500, 1000],
+        'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
+    })
 
-# Bills Data - Filter out empty rows
 if 'bills_df' not in st.session_state:
-    bills_df = load_excel_file("Terrance Credit Card 1.xlsx", "Bill Master List")
-    if not bills_df.empty:
-        # Keep only active bills
-        bills_df = bills_df[bills_df.iloc[:, 0].notna()]
-        bills_df = bills_df[~bills_df.iloc[:, 0].astype(str).str.contains('Unnamed', na=False)]
-        st.session_state.bills_df = bills_df
-    else:
-        st.session_state.bills_df = pd.DataFrame()
+    st.session_state.bills_df = pd.DataFrame({
+        'Bill Name': ['Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 'Intuit', 'Cell Phone'],
+        'Amount': [478, 109, 180, 98, 75, 80],
+        'Due Day': [1, 1, 1, 1, 20, 5],
+        'Pay Via': ['Card1', 'Card1', 'Card2', 'Card2', 'Card2', 'Card3']
+    })
 
-# Revenue Data with undo history - with all columns
 if 'revenue_df' not in st.session_state:
-    # Create sample data with proper structure including all columns
-    sample_data = {
+    data = {
         'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
         'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
-        'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
+        'Hours': [8.53, 0, 0, 0, 0, 0, 0],
+        'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
+        'Goal': [150, 150, 150, 150, 150, 150, 150]
     }
-    df = pd.DataFrame(sample_data)
-    # Add calculated columns
+    df = pd.DataFrame(data)
     df['Difference'] = df['Earnings'] - df['Goal']
     df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
     st.session_state.revenue_df = df
-    st.session_state.revenue_history = []  # For undo functionality
-    st.session_state.current_month = "March"
-
-# Initialize collapsible section states
-if 'show_overview' not in st.session_state:
-    st.session_state.show_overview = True
-if 'show_revenue' not in st.session_state:
-    st.session_state.show_revenue = True
-if 'show_bills' not in st.session_state:
-    st.session_state.show_bills = True
-if 'show_cashflow' not in st.session_state:
-    st.session_state.show_cashflow = True
+    st.session_state.revenue_history = []
 
 # --- MAIN APP ---
 st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs FIRST before using them
+# Create tabs
 tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📅 BILLS", "💰 REVENUE"])
 
-# --- TAB 1: DASHBOARD ---
+# --- DASHBOARD TAB ---
 with tabs[0]:
     st.header("Financial Dashboard")
     
-    # OVERVIEW SECTION with collapsible arrow
-    col1, col2 = st.columns([1, 20])
-    with col1:
-        arrow = "▼" if st.session_state.show_overview else "▶"
-        if st.button(arrow, key="toggle_overview"):
-            st.session_state.show_overview = not st.session_state.show_overview
-            st.rerun()
-    with col2:
-        st.markdown('<p class="dashboard-header">📈 OVERVIEW</p>', unsafe_allow_html=True)
+    # Overview Section
+    st.subheader("📈 Overview")
+    col1, col2, col3, col4 = st.columns(4)
     
-    if st.session_state.show_overview:
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # Calculate card totals with safe check
-        if safe_df_check(st.session_state.get('cards_df')):
-            # Find balance and limit columns
-            balance_col = None
-            limit_col = None
-            
-            for col in st.session_state.cards_df.columns:
-                if 'Total Current Balance' in str(col) or 'Balance' in str(col):
-                    balance_col = col
-                if 'Credit Limit' in str(col) or 'Limit' in str(col):
-                    limit_col = col
-            
-            if balance_col and limit_col:
-                total_balance = pd.to_numeric(st.session_state.cards_df[balance_col], errors='coerce').sum()
-                total_limit = pd.to_numeric(st.session_state.cards_df[limit_col], errors='coerce').sum()
-                available_credit = total_limit - total_balance
-                
-                col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
-                col2.metric("Total Balance", f"${total_balance:,.2f}")
-                col3.metric("Available Credit", f"${available_credit:,.2f}")
-                
-                utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-                col4.metric("Overall Utilization", f"{utilization:.1f}%")
-            else:
-                col1.metric("Total Credit Limit", "$0.00")
-                col2.metric("Total Balance", "$0.00")
-                col3.metric("Available Credit", "$0.00")
-                col4.metric("Overall Utilization", "0%")
-        else:
-            col1.metric("Total Credit Limit", "$0.00")
-            col2.metric("Total Balance", "$0.00")
-            col3.metric("Available Credit", "$0.00")
-            col4.metric("Overall Utilization", "0%")
-            st.info("Add cards in the CARDS tab to see metrics")
+    total_limit = st.session_state.cards_df['Limit'].sum()
+    total_balance = st.session_state.cards_df['Balance'].sum()
+    available = total_limit - total_balance
+    utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
     
-    # REVENUE SECTION with collapsible arrow
-    col1, col2 = st.columns([1, 20])
-    with col1:
-        arrow = "▼" if st.session_state.show_revenue else "▶"
-        if st.button(arrow, key="toggle_revenue"):
-            st.session_state.show_revenue = not st.session_state.show_revenue
-            st.rerun()
-    with col2:
-        st.markdown('<p class="dashboard-header">🚖 REVENUE METRICS</p>', unsafe_allow_html=True)
+    col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
+    col2.metric("Total Balance", f"${total_balance:,.2f}")
+    col3.metric("Available Credit", f"${available:,.2f}")
+    col4.metric("Utilization", f"{utilization:.1f}%")
     
-    if st.session_state.show_revenue:
-        if safe_df_check(st.session_state.get('revenue_df')):
-            # Current month revenue
-            total_hours = st.session_state.revenue_df['Hours'].sum()
-            total_earnings = st.session_state.revenue_df['Earnings'].sum()
-            total_goal = st.session_state.revenue_df['Goal'].sum()
-            avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Hours", f"{total_hours:.2f}")
-            col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-            col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
-            col4.metric("Avg Hourly Rate", f"${avg_hourly:.2f}")
-            
-            # Days above/below goal
-            days_above = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] >= st.session_state.revenue_df['Goal']])
-            days_below = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] < st.session_state.revenue_df['Goal']])
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Days Above Goal", f"{days_above}")
-            col2.metric("Days Below Goal", f"{days_below}")
-            col3.metric("Success Rate", f"{(days_above/len(st.session_state.revenue_df)*100):.1f}%" if len(st.session_state.revenue_df) > 0 else "0%")
-        else:
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Total Hours", "0")
-            col2.metric("Total Earnings", "$0")
-            col3.metric("Goal vs Actual", "$0")
-            col4.metric("Avg Hourly Rate", "$0")
-            st.info("Add revenue data in the REVENUE tab to see metrics")
+    # Revenue Section
+    st.subheader("🚖 Revenue")
+    col1, col2, col3, col4 = st.columns(4)
     
-    # BILL METRICS SECTION with collapsible arrow
-    col1, col2 = st.columns([1, 20])
-    with col1:
-        arrow = "▼" if st.session_state.show_bills else "▶"
-        if st.button(arrow, key="toggle_bills"):
-            st.session_state.show_bills = not st.session_state.show_bills
-            st.rerun()
-    with col2:
-        st.markdown('<p class="dashboard-header">📋 BILL METRICS</p>', unsafe_allow_html=True)
+    total_hours = st.session_state.revenue_df['Hours'].sum()
+    total_earnings = st.session_state.revenue_df['Earnings'].sum()
+    total_goal = st.session_state.revenue_df['Goal'].sum()
+    avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
     
-    if st.session_state.show_bills:
-        if safe_df_check(st.session_state.get('bills_df')):
-            # Find amount column
-            amount_col = None
-            for col in st.session_state.bills_df.columns:
-                if 'Amount' in str(col):
-                    amount_col = col
-                    break
-            
-            if amount_col:
-                total_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
-                
-                # Count active bills
-                active_col = None
-                for col in st.session_state.bills_df.columns:
-                    if 'Active' in str(col):
-                        active_col = col
-                        break
-                
-                if active_col:
-                    active_bills = len(st.session_state.bills_df[st.session_state.bills_df[active_col] == 'Yes'])
-                else:
-                    active_bills = len(st.session_state.bills_df)
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
-                col2.metric("Active Bills", f"{active_bills}")
-                col3.metric("Avg Bill Amount", f"${total_bills/active_bills:,.2f}" if active_bills > 0 else "$0")
-                
-                # Show bill breakdown by category
-                if 'Category' in st.session_state.bills_df.columns:
-                    with st.expander("View by Category"):
-                        category_totals = st.session_state.bills_df.groupby('Category')[amount_col].sum().reset_index()
-                        category_totals.columns = ['Category', 'Total']
-                        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
-                        st.dataframe(category_totals, use_container_width=True, hide_index=True)
-            else:
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Total Monthly Bills", "$0")
-                col2.metric("Active Bills", "0")
-                col3.metric("Avg Bill Amount", "$0")
-        else:
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Monthly Bills", "$0")
-            col2.metric("Active Bills", "0")
-            col3.metric("Avg Bill Amount", "$0")
-            st.info("Add bills in the BILLS tab to see metrics")
+    col1.metric("Total Hours", f"{total_hours:.2f}")
+    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+    col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
+    col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
     
-    # CASH FLOW SECTION with collapsible arrow
-    col1, col2 = st.columns([1, 20])
-    with col1:
-        arrow = "▼" if st.session_state.show_cashflow else "▶"
-        if st.button(arrow, key="toggle_cashflow"):
-            st.session_state.show_cashflow = not st.session_state.show_cashflow
-            st.rerun()
-    with col2:
-        st.markdown('<p class="dashboard-header">💰 CASH FLOW</p>', unsafe_allow_html=True)
+    # Bills Section
+    st.subheader("📋 Bills")
+    col1, col2, col3 = st.columns(3)
     
-    if st.session_state.show_cashflow:
-        revenue_exists = safe_df_check(st.session_state.get('revenue_df'))
-        bills_exists = safe_df_check(st.session_state.get('bills_df'))
-        
-        if revenue_exists and bills_exists:
-            monthly_revenue = st.session_state.revenue_df['Earnings'].sum()
-            
-            # Find amount column for bills
-            amount_col = None
-            for col in st.session_state.bills_df.columns:
-                if 'Amount' in str(col):
-                    amount_col = col
-                    break
-            
-            if amount_col:
-                monthly_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
-                net_cash = monthly_revenue - monthly_bills
-                
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Monthly Revenue", f"${monthly_revenue:,.2f}")
-                col2.metric("Monthly Bills", f"${monthly_bills:,.2f}")
-                
-                if net_cash >= 0:
-                    col3.metric("Net Cash Flow", f"+${net_cash:,.2f}", delta=f"+${net_cash:,.2f}")
-                else:
-                    col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}", delta=f"-${abs(net_cash):,.2f}", delta_color="inverse")
-                
-                # Show cash flow ratio
-                if monthly_bills > 0:
-                    coverage_ratio = (monthly_revenue / monthly_bills) * 100
-                    st.metric("Bill Coverage Ratio", f"{coverage_ratio:.1f}%")
-        else:
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Monthly Revenue", "$0")
-            col2.metric("Monthly Bills", "$0")
-            col3.metric("Net Cash Flow", "$0")
+    total_bills = st.session_state.bills_df['Amount'].sum()
+    col1.metric("Total Bills", f"${total_bills:,.2f}")
+    col2.metric("# of Bills", f"{len(st.session_state.bills_df)}")
+    col3.metric("Avg Bill", f"${total_bills/len(st.session_state.bills_df):,.2f}")
+    
+    # Cash Flow
+    st.subheader("💰 Cash Flow")
+    col1, col2, col3 = st.columns(3)
+    
+    net_cash = total_earnings - total_bills
+    col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
+    col2.metric("Monthly Bills", f"${total_bills:,.2f}")
+    
+    if net_cash >= 0:
+        col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
+    else:
+        col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
 
-# --- TAB 2: CARDS ---
+# --- CARDS TAB ---
 with tabs[1]:
     st.header("Credit Card Management")
-    
-    if safe_df_check(st.session_state.get('cards_df')):
-        edited_cards = st.data_editor(
-            st.session_state.cards_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="cards_editor"
-        )
-        st.session_state.cards_df = edited_cards
-        
-        if st.button("Save Cards", key="save_cards"):
-            st.success("Cards saved!")
-    else:
-        st.warning("No card data available.")
-        if st.button("Create Card Template"):
-            template = pd.DataFrame({
-                'Card ID': ['Card1', 'Card2', 'Card3', 'Card4', 'Card5'],
-                'Bank Name': ['Navy Federal', 'Indigo 3069', 'Indigo 1448', 'Milestone 5093', 'Destiny 3992'],
-                'Credit Limit': [1500, 500, 1000, 500, 1000],
-                'APR': [0.18, 0.359, 0.359, 0.359, 0.359],
-                'Total Current Balance': [1500.1, 632.81, 599.4, 489.81, 944.27],
-                'Active': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes']
-            })
-            st.session_state.cards_df = template
-            st.rerun()
+    edited_cards = st.data_editor(
+        st.session_state.cards_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="cards_editor"
+    )
+    st.session_state.cards_df = edited_cards
 
-# --- TAB 3: BILLS ---
+# --- BILLS TAB ---
 with tabs[2]:
     st.header("Bill Management")
-    
-    if safe_df_check(st.session_state.get('bills_df')):
-        edited_bills = st.data_editor(
-            st.session_state.bills_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="bills_editor"
-        )
-        st.session_state.bills_df = edited_bills
-        
-        if st.button("Save Bills", key="save_bills"):
-            st.success("Bills saved!")
-    else:
-        st.warning("No bill data available.")
-        if st.button("Create Bill Template"):
-            template = pd.DataFrame({
-                'Bill Name': ['Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 'Intuit', 
-                             'Cell Phone', 'Car Payment', 'Car Insurance', 'Gas/Fuel', 'Groceries'],
-                'Amount': [478, 109, 180, 98, 75, 80, 785, 0, 200, 400],
-                'Due Day': [1, 1, 1, 1, 20, 5, 24, 10, 15, 1],
-                'Pay Via': ['Card1', 'Card1', 'Card2', 'Card2', 'Card2', 'Card3', 'Card3', 'Card1', 'Card4', 'Card3'],
-                'Category': ['Housing', 'Housing', 'Housing', 'Housing', 'Utilities', 'Phone', 'Auto', 'Auto', 'Auto', 'Health'],
-                'Active': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']
-            })
-            st.session_state.bills_df = template
-            st.rerun()
+    edited_bills = st.data_editor(
+        st.session_state.bills_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="bills_editor"
+    )
+    st.session_state.bills_df = edited_bills
 
-# --- TAB 4: REVENUE ---
+# --- REVENUE TAB ---
 with tabs[3]:
     st.header("💰 Revenue Tracker")
     
-    # Month selector
-    months = ['January', 'February', 'March', 'April', 'May', 'June', 
-              'July', 'August', 'September', 'October', 'November', 'December']
-    selected_month = st.selectbox("Select Month", months, index=2)
-    
-    st.info(f"Editing {selected_month} 2026 - Changes calculate automatically!")
-    
-    # Ensure revenue_df exists and is properly formatted with all columns
-    if not safe_df_check(st.session_state.get('revenue_df')):
-        sample_data = {
-            'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-            'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
-            'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
-        }
-        df = pd.DataFrame(sample_data)
-        # Add calculated columns
-        df['Difference'] = df['Earnings'] - df['Goal']
-        df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-        st.session_state.revenue_df = df
-    
-    if 'revenue_history' not in st.session_state:
-        st.session_state.revenue_history = []
-    
-    # Make sure all required columns exist
-    required_cols = ['Day', 'Date', 'Hours', 'Earnings', 'Goal', 'Difference', 'Status']
-    for col in required_cols:
-        if col not in st.session_state.revenue_df.columns:
-            if col == 'Difference':
-                st.session_state.revenue_df[col] = st.session_state.revenue_df['Earnings'] - st.session_state.revenue_df['Goal']
-            elif col == 'Status':
-                st.session_state.revenue_df[col] = st.session_state.revenue_df['Difference'].apply(
-                    lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
-                )
-            else:
-                st.session_state.revenue_df[col] = 0.0 if col in ['Hours', 'Earnings', 'Goal'] else ''
-    
-    # Make a clean copy for editing
-    working_df = st.session_state.revenue_df.copy()
-    
-    # Action buttons
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
+    col1, col2 = st.columns([1, 5])
     with col1:
-        # Undo button
-        if st.button("↩️ Undo", key="undo_revenue"):
+        if st.button("↩️ Undo"):
             if st.session_state.revenue_history:
                 st.session_state.revenue_df = st.session_state.revenue_history.pop()
-                st.success("Undo successful!")
                 st.rerun()
-            else:
-                st.warning("No more undos available")
     
-    with col2:
-        # Add week button
-        if st.button("📅 Add Week", key="add_week"):
-            # Save current state for undo
-            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-            
-            days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            current_date = datetime.datetime.now()
-            
-            week_rows = []
-            for i, day in enumerate(days):
-                week_date = current_date + datetime.timedelta(days=i)
-                earnings = 0.0
-                goal = 175.0
-                difference = earnings - goal
-                status = '⚠️ Below Goal' if difference < 0 else '✅ Goal Met'
-                
-                week_rows.append({
-                    'Day': day,
-                    'Date': week_date.strftime("%Y-%m-%d"),
-                    'Hours': 0.0,
-                    'Earnings': earnings,
-                    'Goal': goal,
-                    'Difference': difference,
-                    'Status': status
-                })
-            
-            week_df = pd.DataFrame(week_rows)
-            st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
-            st.rerun()
-    
-    # Define the update function with auto-calculation
-    def update_revenue_data():
-        try:
-            if 'revenue_editor' in st.session_state and st.session_state.revenue_editor is not None:
-                edited_df = st.session_state.revenue_editor
-                
-                # Auto-calculate Difference and Status
-                if 'Earnings' in edited_df.columns and 'Goal' in edited_df.columns:
-                    edited_df['Difference'] = edited_df['Earnings'] - edited_df['Goal']
-                    edited_df['Status'] = edited_df['Difference'].apply(
-                        lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
-                    )
-                
-                # Save current state for undo
-                st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-                # Keep only last 10 undo states
-                if len(st.session_state.revenue_history) > 10:
-                    st.session_state.revenue_history.pop(0)
-                
-                # Update session state
-                st.session_state.revenue_df = edited_df
-        except Exception as e:
-            st.error(f"Error saving changes: {e}")
-    
-    # Display the data editor with all columns
-    if safe_df_check(working_df):
-        edited_revenue = st.data_editor(
-            working_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="revenue_editor",
-            on_change=update_revenue_data,
-            column_config={
-                "Day": st.column_config.TextColumn(
-                    "Day",
-                    disabled=False,
-                    width="small"
-                ),
-                "Date": st.column_config.TextColumn(
-                    "Date",
-                    disabled=False,
-                    width="small"
-                ),
-                "Hours": st.column_config.NumberColumn(
-                    "Hours",
-                    min_value=0.0,
-                    max_value=24.0,
-                    step=0.01,
-                    format="%.2f",
-                    disabled=False
-                ),
-                "Earnings": st.column_config.NumberColumn(
-                    "Earnings ($)",
-                    min_value=0.0,
-                    step=0.01,
-                    format="$%.2f",
-                    disabled=False
-                ),
-                "Goal": st.column_config.NumberColumn(
-                    "Goal ($)",
-                    min_value=0.0,
-                    step=0.01,
-                    format="$%.2f",
-                    disabled=False
-                ),
-                "Difference": st.column_config.NumberColumn(
-                    "Diff ($)",
-                    disabled=True,
-                    format="$%.2f"
-                ),
-                "Status": st.column_config.TextColumn(
-                    "Status",
-                    disabled=True
-                )
-            },
-            hide_index=True,
-        )
-        
-        # Summary section
-        st.markdown("---")
-        st.subheader("📊 Summary")
-        
-        # Calculate totals
-        total_hours = edited_revenue['Hours'].sum()
-        total_earnings = edited_revenue['Earnings'].sum()
-        total_goal = edited_revenue['Goal'].sum()
-        total_diff = total_earnings - total_goal
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Hours", f"{total_hours:.2f}")
-        col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-        col3.metric("Total Goal", f"${total_goal:,.2f}")
-        
-        if total_diff >= 0:
-            col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
-        else:
-            col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
-        
-        # Performance metrics
-        days_above = len(edited_revenue[edited_revenue['Earnings'] >= edited_revenue['Goal']])
-        days_below = len(edited_revenue[edited_revenue['Earnings'] < edited_revenue['Goal']])
-        success_rate = (days_above / len(edited_revenue) * 100) if len(edited_revenue) > 0 else 0
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Days Above Goal", f"{days_above}")
-        col2.metric("Days Below Goal", f"{days_below}")
-        col3.metric("Success Rate", f"{success_rate:.1f}%")
-        
-        # Weekly breakdown
-        if len(edited_revenue) >= 7:
-            with st.expander("📋 Weekly Breakdown"):
-                num_weeks = (len(edited_revenue) + 6) // 7
-                for week_num in range(num_weeks):
-                    start_idx = week_num * 7
-                    end_idx = min((week_num + 1) * 7, len(edited_revenue))
-                    week_data = edited_revenue.iloc[start_idx:end_idx]
-                    
-                    st.write(f"**Week {week_num + 1}**")
-                    w1, w2, w3, w4 = st.columns(4)
-                    w1.metric("Hours", f"{week_data['Hours'].sum():.2f}")
-                    w2.metric("Earnings", f"${week_data['Earnings'].sum():,.2f}")
-                    w3.metric("Goal", f"${week_data['Goal'].sum():,.2f}")
-                    
-                    week_diff = week_data['Earnings'].sum() - week_data['Goal'].sum()
-                    if week_diff >= 0:
-                        w4.metric("Net", f"+${week_diff:,.2f}", delta=f"+${week_diff:,.2f}")
-                    else:
-                        w4.metric("Net", f"-${abs(week_diff):,.2f}", delta=f"-${abs(week_diff):,.2f}", delta_color="inverse")
-    else:
-        st.error("No revenue data available. Please create a template.")
-        if st.button("Create Revenue Template"):
-            sample_data = {
-                'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-                'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
-                'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
-            }
-            df = pd.DataFrame(sample_data)
+    def update_revenue():
+        if 'revenue_editor' in st.session_state:
+            df = st.session_state.revenue_editor
             df['Difference'] = df['Earnings'] - df['Goal']
             df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
             st.session_state.revenue_df = df
-            st.rerun()
+    
+    edited_revenue = st.data_editor(
+        st.session_state.revenue_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="revenue_editor",
+        on_change=update_revenue,
+        column_config={
+            "Day": st.column_config.TextColumn("Day"),
+            "Date": st.column_config.TextColumn("Date"),
+            "Hours": st.column_config.NumberColumn("Hours", format="%.2f"),
+            "Earnings": st.column_config.NumberColumn("Earnings ($)", format="$%.2f"),
+            "Goal": st.column_config.NumberColumn("Goal ($)", format="$%.2f"),
+            "Difference": st.column_config.NumberColumn("Diff ($)", disabled=True, format="$%.2f"),
+            "Status": st.column_config.TextColumn("Status", disabled=True)
+        },
+        hide_index=True
+    )
+    
+    # Summary
+    st.markdown("---")
+    st.subheader("📊 Summary")
+    
+    total_hours = edited_revenue['Hours'].sum()
+    total_earnings = edited_revenue['Earnings'].sum()
+    total_goal = edited_revenue['Goal'].sum()
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Hours", f"{total_hours:.2f}")
+    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+    col3.metric("Total Goal", f"${total_goal:,.2f}")
