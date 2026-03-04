@@ -103,7 +103,7 @@ with tabs[0]:
     col1, col2, col3, col4 = st.columns(4)
     
     # Calculate card totals
-    if not st.session_state.cards_df.empty:
+    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
         # Find balance and limit columns
         balance_col = None
         limit_col = None
@@ -125,16 +125,22 @@ with tabs[0]:
             
             utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
             col4.metric("Overall Utilization", f"{utilization:.1f}%")
+        else:
+            col1.metric("Total Credit Limit", "$0.00")
+            col2.metric("Total Balance", "$0.00")
+            col3.metric("Available Credit", "$0.00")
+            col4.metric("Overall Utilization", "0%")
     else:
         col1.metric("Total Credit Limit", "$0.00")
         col2.metric("Total Balance", "$0.00")
         col3.metric("Available Credit", "$0.00")
         col4.metric("Overall Utilization", "0%")
+        st.info("Add cards in the CARDS tab to see metrics")
     
     # Revenue Metrics
     st.markdown('<p class="dashboard-header">🚖 REVENUE METRICS</p>', unsafe_allow_html=True)
     
-    if not st.session_state.revenue_df.empty:
+    if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
         # Current month revenue
         total_hours = st.session_state.revenue_df['Hours'].sum()
         total_earnings = st.session_state.revenue_df['Earnings'].sum()
@@ -160,11 +166,12 @@ with tabs[0]:
         col2.metric("Total Earnings", "$0")
         col3.metric("Goal vs Actual", "$0")
         col4.metric("Avg Hourly Rate", "$0")
+        st.info("Add revenue data in the REVENUE tab to see metrics")
     
     # Bill Metrics
     st.markdown('<p class="dashboard-header">📋 BILL METRICS</p>', unsafe_allow_html=True)
     
-    if not st.session_state.bills_df.empty:
+    if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
         # Find amount column
         amount_col = None
         for col in st.session_state.bills_df.columns:
@@ -195,11 +202,15 @@ with tabs[0]:
         col1.metric("Total Monthly Bills", "$0")
         col2.metric("Active Bills", "0")
         col3.metric("Avg Bill Amount", "$0")
+        st.info("Add bills in the BILLS tab to see metrics")
     
     # Cash Flow Overview
     st.markdown('<p class="dashboard-header">💰 CASH FLOW</p>', unsafe_allow_html=True)
     
-    if not st.session_state.revenue_df.empty and not st.session_state.bills_df.empty:
+    revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
+    bills_exists = 'bills_df' in st.session_state and not st.session_state.bills_df.empty
+    
+    if revenue_exists and bills_exists:
         monthly_revenue = st.session_state.revenue_df['Earnings'].sum()
         
         # Find amount column for bills
@@ -230,7 +241,7 @@ with tabs[0]:
 with tabs[1]:
     st.header("Credit Card Management")
     
-    if not st.session_state.cards_df.empty:
+    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
         edited_cards = st.data_editor(
             st.session_state.cards_df,
             num_rows="dynamic",
@@ -259,7 +270,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Bill Management")
     
-    if not st.session_state.bills_df.empty:
+    if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
         edited_bills = st.data_editor(
             st.session_state.bills_df,
             num_rows="dynamic",
@@ -296,11 +307,20 @@ with tabs[3]:
     
     st.info(f"Editing {selected_month} 2026 - Changes calculate automatically!")
     
+    # Make sure revenue_df exists
+    if 'revenue_df' not in st.session_state:
+        sample_data = {
+            'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+            'Date': ['3/2/2026', '3/3/2026', '3/4/2026', '3/5/2026', '3/6/2026', '3/7/2026', '3/8/2026'],
+            'Hours': [8.53, 0, 0, 0, 0, 0, 0],
+            'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
+            'Goal': [150, 150, 150, 150, 150, 150, 150]
+        }
+        st.session_state.revenue_df = pd.DataFrame(sample_data)
+        st.session_state.revenue_history = []
+    
     # Make a copy of the dataframe for editing
-    if 'revenue_df' in st.session_state:
-        working_df = st.session_state.revenue_df.copy()
-    else:
-        working_df = pd.DataFrame(columns=['Day', 'Date', 'Hours', 'Earnings', 'Goal'])
+    working_df = st.session_state.revenue_df.copy()
     
     # Action buttons
     col1, col2, col3 = st.columns([1, 1, 2])
@@ -319,6 +339,8 @@ with tabs[3]:
         # Add week button
         if st.button("📅 Add Week", key="add_week"):
             # Save state for undo
+            if 'revenue_history' not in st.session_state:
+                st.session_state.revenue_history = []
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
             
             days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -343,6 +365,10 @@ with tabs[3]:
     def update_revenue_data():
         try:
             if 'revenue_editor' in st.session_state and st.session_state.revenue_editor is not None:
+                # Initialize history if needed
+                if 'revenue_history' not in st.session_state:
+                    st.session_state.revenue_history = []
+                
                 # Save current state for undo before making changes
                 st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
                 # Keep only last 10 undo states
