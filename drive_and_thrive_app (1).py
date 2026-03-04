@@ -59,6 +59,6 @@ if cards_df is not None:
         st.table(cards_df[['Bank Name', 'Total Current Balance', 'Credit Limit', 'Util %']])
 
         with tabs[2]:
-        st.dataframe(bills_df[bills_df['Active'] == 'Yes'].sort_values('Due Day')[['Bill Name', 'Amount', 'Due Day']])
+           with st.dataframe(bills_df[bills_df['Active'] == 'Yes'].sort_values('Due Day')[['Bill Name', 'Amount', 'Due Day']])
 else:
     st.warning("Please upload your CSV files to GitHub to populate the terminal.")
