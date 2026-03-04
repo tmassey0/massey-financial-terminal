@@ -1,3 +1,174 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import os
+import datetime
+
+# --- 1. BRANDING & UI CONFIG ---
+st.set_page_config(page_title="MASSEY STRATEGIC CAPITAL", layout="wide")
+
+st.markdown("""
+<style>
+    html, body, [class*="st-at"] { background-color: #0B0E14; color: #E2E8F0; }
+    div[data-testid="stMetric"] { background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 20px !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- CHECK FILES ---
+st.sidebar.header("📁 Data Files")
+files = os.listdir()
+st.sidebar.write("Files found:", files)
+
+# --- 2. DATA LOAD ENGINE ---
+def load_and_fix(file, sheet, skip, cols):
+    try:
+        st.sidebar.write(f"Loading: {file} / {sheet}")
+        df = pd.read_excel(file, sheet_name=sheet, skiprows=skip)
+        
+        # For Uber sheets, we need to be more careful
+        if "Uber Tracker" in file:
+            # Filter to actual data rows (where Date has data)
+            df = df[df.iloc[:, 1].notna() & (df.iloc[:, 1] != '')]
+            if len(df.columns) >= 7:
+                df = df.iloc[:, :7]  # Take first 7 columns
+                df.columns = ['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status']
+            else:
+                # Handle case with fewer columns
+                new_cols = ['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status']
+                df = df.reindex(columns=new_cols[:len(df.columns)])
+        else:
+            df.columns = [str(c).strip() for c in df.columns]
+        
+        # Convert numeric columns
+        for col in df.columns:
+            if col in ['Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Amount', 'Balance', 'Limit']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        return df
+    except Exception as e:
+        st.sidebar.error(f"Error loading {sheet}: {e}")
+        return pd.DataFrame(columns=cols)
+
+# --- 3. PERSISTENT MEMORY ---
+if 'cards' not in st.session_state:
+    st.session_state.cards = load_and_fix("Terrance Credit Card 1.xlsx", "Credit Cards", 1, 
+                                          ["Bank Name", "Balance", "Limit", "APR", "Active"])
+if 'bills' not in st.session_state:
+    st.session_state.bills = load_and_fix("Terrance Credit Card 1.xlsx", "Bill Master List", 1, 
+                                          ["Bill Name", "Amount", "Due Day", "Pay Via", "Category", "Active"])
+
+# Load Uber data - get all sheets
+uber_sheets = ['January', 'February', 'March', 'April', 'May', 'June', 
+               'July', 'August', 'September', 'October', 'November', 'December']
+
+if 'uber_current' not in st.session_state:
+    # Default to March
+    try:
+        df = pd.read_excel("Terrance Uber Tracker.xlsx", sheet_name="March", skiprows=3)
+        # Filter to actual data rows
+        df = df[df.iloc[:, 1].notna() & (df.iloc[:, 1] != '')]
+        if len(df.columns) >= 7:
+            df = df.iloc[:, :7]
+            df.columns = ['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status']
+            # Convert numeric columns
+            for col in ['Hours', 'Daily Earnings', 'Daily Goal', 'Difference']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            # Calculate initial differences
+            df['Difference'] = df['Daily Earnings'] - df['Daily Goal']
+            df['Status'] = df['Difference'].apply(lambda x: "✅ Goal Met" if x >= 0 else "⚠️ Below Goal")
+        st.session_state.uber_current = df
+        st.session_state.uber_month = "March"
+    except Exception as e:
+        st.sidebar.error(f"Error loading Uber data: {e}")
+        st.session_state.uber_current = pd.DataFrame(columns=['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status'])
+        st.session_state.uber_month = "March"
+
+# --- 4. THE COMMAND CENTER ---
+st.title("🏛️ Massey Strategic Capital Terminal")
+
+# Define tabs FIRST before using them
+tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS & LIQUIDITY", "📅 BILL MASTER", "🚖 UBER PERFORMANCE"])
+
+# --- DASHBOARD ---
+with tabs[0]:
+    c = st.session_state.cards
+    
+    # Find balance column
+    bal_col = None
+    for col in c.columns:
+        if 'Balance' in col or 'M3' in str(col) or 'Current' in str(col) or 'Total Current' in str(col):
+            bal_col = col
+            break
+    
+    # Find limit column
+    lim_col = None
+    for col in c.columns:
+        if 'Limit' in col or 'C3' in str(col) or 'Credit' in str(col):
+            lim_col = col
+            break
+    
+    m1, m2, m3 = st.columns(3)
+    if bal_col and lim_col and bal_col in c.columns and lim_col in c.columns:
+        try:
+            b = pd.to_numeric(c[bal_col], errors='coerce').fillna(0).sum()
+            l = pd.to_numeric(c[lim_col], errors='coerce').fillna(0).sum()
+            m1.metric("TOTAL LIABILITIES", f"${b:,.2f}")
+            m2.metric("AVAILABLE CREDIT", f"${(l - b):,.2f}")
+            util = (b/l)*100 if l > 0 else 0
+            m3.metric("UTILIZATION", f"{util:.1f}%")
+        except Exception as e:
+            m1.metric("TOTAL LIABILITIES", "$0.00")
+            m2.metric("AVAILABLE CREDIT", "$0.00")
+            m3.metric("UTILIZATION", "0%")
+            st.sidebar.error(f"Dashboard error: {e}")
+    else:
+        m1.metric("TOTAL LIABILITIES", "$0.00")
+        m2.metric("AVAILABLE CREDIT", "$0.00")
+        m3.metric("UTILIZATION", "0%")
+        st.info("Add cards in the CARDS tab to see metrics")
+
+# --- CARDS ---
+with tabs[1]:
+    st.subheader("💳 Manage Portfolio")
+    st.info("Edit your credit cards below. Add new rows with the (+) button.")
+    
+    edited_cards = st.data_editor(
+        st.session_state.cards, 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        key="ce_final",
+        column_config={
+            "Balance": st.column_config.NumberColumn(format="$%.2f"),
+            "Limit": st.column_config.NumberColumn(format="$%.2f"),
+            "APR": st.column_config.NumberColumn(format="%.2f%%"),
+        }
+    )
+    st.session_state.cards = edited_cards
+    
+    if st.button("💾 Save Cards", key="save_cards"): 
+        st.success("Cards saved to session!")
+        st.rerun()
+
+# --- BILLS ---
+with tabs[2]:
+    st.subheader("📋 Manage Bills")
+    st.info("Edit your monthly bills below. Add new rows with the (+) button.")
+    
+    edited_bills = st.data_editor(
+        st.session_state.bills, 
+        num_rows="dynamic", 
+        use_container_width=True, 
+        key="be_final",
+        column_config={
+            "Amount": st.column_config.NumberColumn(format="$%.2f"),
+        }
+    )
+    st.session_state.bills = edited_bills
+    
+    if st.button("💾 Save Bills", key="save_bills"): 
+        st.success("Bills saved to session!")
+        st.rerun()
+
 # --- UBER PERFORMANCE (WITH AUTO-CALCULATION) ---
 with tabs[3]:
     st.subheader("🚖 Edit Uber Performance")
@@ -52,7 +223,7 @@ with tabs[3]:
     # Create editable dataframe with on_change callback
     def on_uber_edit():
         # This gets the current state of the editor
-        if st.session_state[editor_key] is not None:
+        if editor_key in st.session_state and st.session_state[editor_key] is not None:
             edited_data = st.session_state[editor_key]
             
             # Calculate difference and status for each row
@@ -183,7 +354,6 @@ with tabs[3]:
     # Add new row button
     st.markdown("---")
     if st.button("➕ Add New Row", key="add_row"):
-        import datetime
         # Determine next day
         if len(st.session_state.uber_current) > 0:
             last_date = st.session_state.uber_current['Date'].iloc[-1]
