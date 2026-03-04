@@ -20,13 +20,16 @@ st.markdown(css, unsafe_allow_html=True)
 @st.cache_data
 def load_data():
     try:
-        # File names must match your GitHub files exactly
+        # UPDATED: Using the exact filenames from your directory
         cards = pd.read_csv('Terrance Credit Card 1.xlsx - Credit Cards.csv', skiprows=1)
         bills = pd.read_csv('Terrance Credit Card 1.xlsx - Bill Master List.csv', skiprows=1)
         uber_march = pd.read_csv('Terrance Uber Tracker.xlsx - March.csv', skiprows=3)
         return cards, bills, uber_march
+    except FileNotFoundError as e:
+        st.error(f"🔍 File Missing: {e.filename}. Please ensure this exact file is uploaded to GitHub.")
+        return None, None, None
     except Exception as e:
-        st.error(f"Critical System Link Failure: {e}")
+        st.error(f"⚠️ System Error: {e}")
         return None, None, None
 
 cards_df, bills_df, march_df = load_data()
