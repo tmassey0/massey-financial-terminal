@@ -12,25 +12,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. DATA LOAD ENGINE ---
-def load_data(file, sheet, skip):
+# --- 2. DATA LOAD ENGINE (CLEANS 'NONE' ON LOAD) ---
+def load_and_scrub(file, sheet, skip, default_cols):
     try:
         df = pd.read_excel(file, sheet_name=sheet, skiprows=skip)
         df.columns = [str(c).strip() for c in df.columns]
+        # FIX: Replace 'None' and 'NaN' with 0 for numbers or empty strings for text
+        df = df.fillna(0) 
         return df
     except:
-        # If file is missing, we create the exact structure you need
-        return pd.DataFrame(columns=["Date", "Day", "Hours Worked", "Gross Earnings", "Daily Goal"])
+        return pd.DataFrame(columns=default_cols)
 
 # --- 3. PERSISTENT SESSION STATE ---
 if 'cards' not in st.session_state:
-    st.session_state.cards = load_data("Terrance Credit Card 1.xlsx", "Credit Cards", 1)
+    st.session_state.cards = load_and_scrub("Terrance Credit Card 1.xlsx", "Credit Cards", 1, ["Bank Name", "Balance", "Limit"])
 if 'bills' not in st.session_state:
-    st.session_state.bills = load_data("Terrance Credit Card 1.xlsx", "Bill Master List", 1)
+    st.session_state.bills = load_and_scrub("Terrance Credit Card 1.xlsx", "Bill Master List", 1, ["Bill Name", "Amount", "Due Day"])
 if 'uber' not in st.session_state:
-    st.session_state.uber = load_data("Terrance Uber Tracker.xlsx", "March", 3)
+    # Ensure Uber headers match exactly what's in your sheet
+    st.session_state.uber = load_and_scrub("Terrance Uber Tracker.xlsx", "March", 3, ["Date", "Hours Worked", "Gross Earnings", "Daily Goal", "Difference"])
 
-# --- 4. THE COMMAND CENTER (YOUR SPECIFIC ORDER) ---
+# --- 4. THE COMMAND CENTER ---
 st.title("🏛️ Massey Strategic Capital Terminal")
 
 tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS & LIQUIDITY", "📅 BILL MASTER", "🚖 UBER PERFORMANCE"])
@@ -40,7 +42,7 @@ with tabs[0]:
     c = st.session_state.cards
     u = st.session_state.uber
     
-    # Dynamic Math for Metrics
+    # Calculate Totals
     bal_col = next((col for col in c.columns if 'Balance' in col), None)
     lim_col = next((col for col in c.columns if 'Limit' in col), None)
     
@@ -50,69 +52,57 @@ with tabs[0]:
         total_lim = pd.to_numeric(c[lim_col], errors='coerce').sum()
         m1.metric("TOTAL LIABILITIES", f"${total_bal:,.2f}")
         m2.metric("AVAILABLE CREDIT", f"${(total_lim - total_bal):,.2f}")
-        m3.metric("PORTFOLIO UTILIZATION", f"{(total_bal/total_lim)*100:.1f}%" if total_lim > 0 else "0%")
-    
-    st.divider()
-    st.subheader("Revenue Velocity")
-    earn_col = next((col for col in u.columns if 'Earnings' in col), None)
-    if earn_col and not u.empty:
-        u_clean = u.copy()
-        u_clean[earn_col] = pd.to_numeric(u_clean[earn_col], errors='coerce').fillna(0)
-        fig = px.bar(u_clean, x=u_clean.columns[0], y=earn_col, template="plotly_dark", color_discrete_sequence=['#38BDF8'])
-        st.plotly_chart(fig, use_container_width=True)
+        m3.metric("UTILIZATION", f"{(total_bal/total_lim)*100:.1f}%" if total_lim > 0 else "0%")
 
 # --- TAB 2: CARDS & LIQUIDITY ---
 with tabs[1]:
     st.subheader("Manage Credit Card Portfolio")
-    edited_cards = st.data_editor(
+    st.session_state.cards = st.data_editor(
         st.session_state.cards,
         num_rows="dynamic",
         use_container_width=True,
-        key="cards_editor_v6"
+        key="cards_edit_vFinal"
     )
-    if st.button("💾 Save Portfolio Updates"):
-        st.session_state.cards = edited_cards
-        st.success("Card data updated!")
+    if st.button("Save Cards"): st.success("Saved")
 
 # --- TAB 3: BILL MASTER ---
 with tabs[2]:
     st.subheader("Monthly Burn List")
-    edited_bills = st.data_editor(
+    st.session_state.bills = st.data_editor(
         st.session_state.bills,
         num_rows="dynamic",
         use_container_width=True,
-        key="bills_editor_v6"
+        key="bills_edit_vFinal"
     )
-    if st.button("💾 Save Bill Schedule"):
-        st.session_state.bills = edited_bills
-        st.success("Bills updated!")
+    if st.button("Save Bills"): st.success("Saved")
 
-# --- TAB 4: UBER PERFORMANCE (FORCED EDITING) ---
+# --- TAB 4: UBER PERFORMANCE (THE FIX) ---
 with tabs[3]:
-    st.subheader("Daily Earnings & Hours Entry")
-    st.info("Instructions: Double-click ANY cell (Hours, Earnings, etc.) to edit. Use the (+) at the bottom for new rows.")
+    st.subheader("Daily Drive Log")
+    st.info("Boxes should now be empty or '0' instead of 'None'. Double-click to type.")
     
-    # We explicitly tell Streamlit that these columns should be editable numbers/text
-    # This prevents the "locking" behavior you were seeing
+    # FORCING EDITABILITY BY DEFINING COLUMN TYPES
     edited_uber = st.data_editor(
         st.session_state.uber,
         num_rows="dynamic",
         use_container_width=True,
-        key="uber_editor_v6",
+        key="uber_edit_vFinal",
         column_config={
-            "Hours Worked": st.column_config.NumberColumn("Hours", format="%.2f"),
-            "Gross Earnings": st.column_config.NumberColumn("Earnings ($)", format="$%.2f"),
-            "Daily Goal": st.column_config.NumberColumn("Goal ($)", format="$%.2f"),
-            "Difference": st.column_config.NumberColumn("Diff ($)", format="$%.2f", disabled=False)
+            "Date": st.column_config.TextColumn("Date"),
+            "Hours Worked": st.column_config.NumberColumn("Hours", format="%.2f", min_value=0),
+            "Gross Earnings": st.column_config.NumberColumn("Earnings", format="$%.2f", min_value=0),
+            "Daily Goal": st.column_config.NumberColumn("Goal", format="$%.2f", min_value=0),
+            "Difference": st.column_config.NumberColumn("Diff", format="$%.2f")
         }
     )
     
-    if st.button("💾 Commit Uber Performance"):
-        # Before saving, we calculate the Difference automatically for you
-        if "Gross Earnings" in edited_uber.columns and "Daily Goal" in edited_uber.columns:
-            e = pd.to_numeric(edited_uber["Gross Earnings"], errors='coerce').fillna(0)
-            g = pd.to_numeric(edited_uber["Daily Goal"], errors='coerce').fillna(0)
-            edited_uber["Difference"] = e - g
-            
+    if st.button("Commit Uber Data"):
+        # Auto-calculate the difference column
+        try:
+            e = pd.to_numeric(edited_uber.iloc[:, 2], errors='coerce').fillna(0) # Earnings
+            g = pd.to_numeric(edited_uber.iloc[:, 3], errors='coerce').fillna(0) # Goal
+            edited_uber.iloc[:, 4] = e - g # Difference
+        except:
+            pass
         st.session_state.uber = edited_uber
-        st.success("Uber ledger updated and Difference calculated!")
+        st.rerun() # Refresh to show the new math
