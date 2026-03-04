@@ -4,7 +4,7 @@ import os
 import datetime
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="THE STRATEGIC CAPITAL TERMINAL", layout="wide")
+st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
 # --- SIMPLE CUSTOM CSS ---
 st.markdown("""
@@ -88,7 +88,7 @@ if 'revenue_df' not in st.session_state:
     st.session_state.current_month = "March"
 
 # --- MAIN APP ---
-st.title("🏛️ The Strategic Capital Terminal")
+st.title("🏛️ Strategic Capital Terminal")
 
 # Create tabs
 tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📅 BILLS", "💰 REVENUE"])
