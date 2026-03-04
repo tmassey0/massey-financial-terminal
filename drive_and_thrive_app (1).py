@@ -1,245 +1,244 @@
-import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# =========================
-# 0. DATA DIRECTORY
-# =========================
-# Use the working directory directly (where this script runs).
-SCRIPT_DIR = os.getcwd()
-DATA_DIR = SCRIPT_DIR  # Excel files live right next to the .py file
-
-st.write("Working directory:", SCRIPT_DIR)
-st.write("Data directory:", DATA_DIR)
-st.write("Data files:", os.listdir(DATA_DIR))
-
-# =========================
-# 1. BRANDING & UI CONFIG
-# =========================
+# --- 1. BRANDING & UI CONFIG ---
 st.set_page_config(page_title="MASSEY STRATEGIC CAPITAL", layout="wide")
 
-st.markdown(
-    """
-    <style>
-        html, body, [class*="st-at"] {
-            background-color: #0B0E14;
-            color: #E2E8F0;
-        }
-        div[data-testid="stMetric"] {
-            background-color: #161B22;
-            border: 1px solid #30363D;
-            border-radius: 8px;
-            padding: 20px !important;
-        }
-        .stTabs [aria-selected="true"] {
-            color: #38BDF8 !important;
-            border-bottom: 2px solid #38BDF8 !important;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown("""
+<style>
+    html, body, [class*="st-at"] { background-color: #0B0E14; color: #E2E8F0; }
+    div[data-testid="stMetric"] { background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 20px !important; }
+</style>
+""", unsafe_allow_html=True)
 
-# =========================
-# 2. DATA LOAD ENGINE
-# =========================
-
-def load_and_fix(filename, sheet, skip, cols):
-    """Load Excel sheet from DATA_DIR, clean columns, fill NaNs; on error show Streamlit error."""
+# --- 2. DATA LOAD ENGINE ---
+def load_and_fix(file, sheet, skip, cols):
     try:
-        full_path = os.path.join(DATA_DIR, filename)
-        df = pd.read_excel(full_path, sheet_name=sheet, skiprows=skip)
-        df.columns = [str(c).strip() for c in df.columns]
+        df = pd.read_excel(file, sheet_name=sheet, skiprows=skip)
+        # For Uber sheets, we need to be more careful
+        if "Uber Tracker" in file:
+            # Find the actual data rows (where Date and Hours are populated)
+            df = df[df.iloc[:, 1].notna()]  # Keep rows where Date column has data
+            df.columns = ['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status']
+            df = df.reset_index(drop=True)
+        else:
+            df.columns = [str(c).strip() for c in df.columns]
         return df.fillna(0)
     except Exception as e:
-        st.error(f"Error loading {filename} / {sheet}: {e}")
+        print(f"Error loading {sheet}: {e}")
         return pd.DataFrame(columns=cols)
 
-# =========================
-# 3. PERSISTENT MEMORY
-# =========================
+# --- 3. PERSISTENT MEMORY ---
+if 'cards' not in st.session_state:
+    st.session_state.cards = load_and_fix("Terrance Credit Card 1.xlsx", "Credit Cards", 1, ["Bank Name", "Balance", "Limit"])
+if 'bills' not in st.session_state:
+    st.session_state.bills = load_and_fix("Terrance Credit Card 1.xlsx", "Bill Master List", 1, ["Bill Name", "Amount"])
+if 'uber' not in st.session_state:
+    # Load March data
+    df = pd.read_excel("Terrance Uber Tracker.xlsx", sheet_name="March", skiprows=3)
+    # Filter to actual data rows (where Date is populated)
+    df = df[df.iloc[:, 1].notna() & (df.iloc[:, 1] != '')]
+    df = df.iloc[:, :7]  # Take first 7 columns
+    df.columns = ['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status']
+    # Convert numeric columns
+    for col in ['Hours', 'Daily Earnings', 'Daily Goal', 'Difference']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    st.session_state.uber = df
 
-if "cards" not in st.session_state:
-    st.session_state.cards = load_and_fix(
-        "Terrance-Credit-Card-1.xlsx",
-        "Credit Cards",
-        1,
-        ["Bank Name", "Total Current Balance", "Credit Limit"],
-    )
-
-if "bills" not in st.session_state:
-    st.session_state.bills = load_and_fix(
-        "Terrance-Credit-Card-1.xlsx",
-        "Bill Master List",
-        1,
-        ["Bill Name", "Amount", "Due Day", "Active"],
-    )
-
-if "uber" not in st.session_state:
-    st.session_state.uber = load_and_fix(
-        "Terrance-Uber-Tracker-2.xlsx",
-        "UBER EARNINGS - 2026 ANNUAL SUMMARY",
-        3,
-        ["Month", "Total Hours", "Total Earnings", "Monthly Goal", "Difference", "Status"],
-    )
-
-cards_df = st.session_state.cards
-bills_df = st.session_state.bills
-uber_df = st.session_state.uber
-
-# =========================
-# 4. TITLE & TABS
-# =========================
+# --- 4. THE COMMAND CENTER ---
 st.title("🏛️ Massey Strategic Capital Terminal")
 
-tabs = st.tabs(
-    [
-        "📊 DASHBOARD",
-        "💳 CARDS & LIQUIDITY",
-        "📅 BILL MASTER",
-        "🚖 UBER PERFORMANCE",
-    ]
-)
+tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS & LIQUIDITY", "📅 BILL MASTER", "🚖 UBER PERFORMANCE"])
 
-# =========================
-# 5. DASHBOARD TAB
-# =========================
+# --- DASHBOARD ---
 with tabs[0]:
-    st.subheader("Executive Overview")
-
-    bal_col = next(
-        (c for c in cards_df.columns if "Total Current Balance" in c or "Balance" in c),
-        None,
-    )
-    lim_col = next(
-        (c for c in cards_df.columns if "Credit Limit" in c or "Limit" in c),
-        None,
-    )
-
-    total_liabilities = 0
-    total_limit = 0
-    utilization = 0
-
+    c = st.session_state.cards
+    bal_col = next((col for col in c.columns if 'Balance' in col or 'Current Balance' in col or 'M3' in str(col)), None)
+    lim_col = next((col for col in c.columns if 'Limit' in col or 'Credit Limit' in col or 'C3' in str(col)), None)
+    
+    m1, m2, m3 = st.columns(3)
     if bal_col and lim_col:
-        total_liabilities = pd.to_numeric(cards_df[bal_col], errors="coerce").sum()
-        total_limit = pd.to_numeric(cards_df[lim_col], errors="coerce").sum()
-        utilization = (total_liabilities / total_limit * 100) if total_limit > 0 else 0
+        try:
+            b = pd.to_numeric(c[bal_col], errors='coerce').sum()
+            l = pd.to_numeric(c[lim_col], errors='coerce').sum()
+            m1.metric("TOTAL LIABILITIES", f"${b:,.2f}")
+            m2.metric("AVAILABLE CREDIT", f"${(l - b):,.2f}")
+            m3.metric("UTILIZATION", f"{(b/l)*100:.1f}%" if l > 0 else "0%")
+        except:
+            m1.metric("TOTAL LIABILITIES", "$0.00")
+            m2.metric("AVAILABLE CREDIT", "$0.00")
+            m3.metric("UTILIZATION", "0%")
 
-    if "Active" in bills_df.columns:
-        active_mask = bills_df["Active"].astype(str).str.strip().str.lower().isin(
-            ["yes", "true", "1"]
-        )
-        monthly_burn = pd.to_numeric(
-            bills_df.loc[active_mask, "Amount"], errors="coerce"
-        ).sum()
-    else:
-        monthly_burn = pd.to_numeric(bills_df.get("Amount", 0), errors="coerce").sum()
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("TOTAL LIABILITIES", f"${total_liabilities:,.2f}")
-    m2.metric(
-        "AVERAGE UTILIZATION",
-        f"{utilization:.1f}%" if total_limit > 0 else "N/A",
-    )
-    m3.metric("MONTHLY BURN (ACTIVE BILLS)", f"${monthly_burn:,.2f}")
-    m4.metric("TARGET APR", "35.9%", "High Interest Risk")
-
-    st.divider()
-
-    if total_liabilities > 0:
-        months = ["MAR", "APR", "MAY", "JUN", "JUL"]
-        projection = [max(0, total_liabilities - i * 1344) for i in range(len(months))]
-
-        fig = px.line(
-            x=months,
-            y=projection,
-            markers=True,
-            labels={"x": "Month", "y": "Projected Liabilities"},
-            title="Liability Reduction Projection",
-        )
-        fig.update_traces(line=dict(color="#0EA5E9", width=4))
-        fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No card data found yet to project liabilities.")
-
-# =========================
-# 6. CARDS & LIQUIDITY TAB
-# =========================
+# --- CARDS ---
 with tabs[1]:
-    st.subheader("Manage Credit Portfolio")
-
-    st.session_state.cards = st.data_editor(
-        st.session_state.cards,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="cards_editor",
-    )
-
-    if st.button("Save Cards & Refresh"):
+    st.subheader("💳 Manage Portfolio")
+    st.session_state.cards = st.data_editor(st.session_state.cards, num_rows="dynamic", use_container_width=True, key="ce_final")
+    if st.button("💾 Save Cards", key="save_cards"): 
+        st.success("Cards saved!")
         st.rerun()
 
-# =========================
-# 7. BILL MASTER TAB
-# =========================
+# --- BILLS ---
 with tabs[2]:
-    st.subheader("Manage Bills")
-
-    st.session_state.bills = st.data_editor(
-        st.session_state.bills,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="bills_editor",
-    )
-
-    if st.button("Save Bills & Refresh"):
+    st.subheader("📋 Manage Bills")
+    st.session_state.bills = st.data_editor(st.session_state.bills, num_rows="dynamic", use_container_width=True, key="be_final")
+    if st.button("💾 Save Bills", key="save_bills"): 
+        st.success("Bills saved!")
         st.rerun()
 
-# =========================
-# 8. UBER PERFORMANCE TAB
-# =========================
+# --- UBER PERFORMANCE (THE FIXED VERSION) ---
 with tabs[3]:
-    st.subheader("Edit Uber Annual Performance")
-    st.info(
-        "Edit any cell directly, use (+) at the bottom for new rows, then click "
-        "'Commit & Recalculate Difference'."
-    )
-
-    uber_columns = list(st.session_state.uber.columns)
-
-    column_config = {}
-    if "Total Hours" in uber_columns:
-        column_config["Total Hours"] = st.column_config.NumberColumn(disabled=False)
-    if "Total Earnings" in uber_columns:
-        column_config["Total Earnings"] = st.column_config.NumberColumn(
-            disabled=False, format="$%0.2f"
-        )
-    if "Monthly Goal" in uber_columns:
-        column_config["Monthly Goal"] = st.column_config.NumberColumn(
-            disabled=False, format="$%0.2f"
-        )
-    if "Difference" in uber_columns:
-        column_config["Difference"] = st.column_config.NumberColumn(
-            disabled=False, format="$%0.2f"
-        )
-
+    st.subheader("🚖 Edit Uber Performance - March 2026")
+    
+    # Show week selector
+    weeks = ["Week 1 (Mar 2-8)", "Week 2 (Mar 9-15)", "Week 3 (Mar 16-22)", "Week 4 (Mar 23-29)", "All Weeks"]
+    selected_week = st.selectbox("Select Week to Edit", weeks, key="week_selector")
+    
+    # Filter based on selection
+    if selected_week != "All Weeks":
+        week_data = st.session_state.uber.copy()
+        if selected_week == "Week 1 (Mar 2-8)":
+            week_data = week_data.iloc[0:7] if len(week_data) >= 7 else week_data
+        elif selected_week == "Week 2 (Mar 9-15)":
+            week_data = week_data.iloc[7:14] if len(week_data) >= 14 else week_data
+        elif selected_week == "Week 3 (Mar 16-22)":
+            week_data = week_data.iloc[14:21] if len(week_data) >= 21 else week_data
+        elif selected_week == "Week 4 (Mar 23-29)":
+            week_data = week_data.iloc[21:28] if len(week_data) >= 28 else week_data
+    else:
+        week_data = st.session_state.uber.copy()
+    
+    st.info("📝 Double-click any cell to edit. Hours format: 7.04 = 7 hours 4 minutes")
+    
+    # Create editable dataframe
     edited_uber = st.data_editor(
-        st.session_state.uber,
+        week_data,
         num_rows="dynamic",
         use_container_width=True,
-        key="uber_editor",
-        column_config=column_config,
+        key="ue_final",
+        column_config={
+            "Day": st.column_config.TextColumn("Day", disabled=True, width="small"),
+            "Date": st.column_config.DatetimeColumn("Date", disabled=True, format="MM/DD/YYYY", width="small"),
+            "Hours": st.column_config.NumberColumn(
+                "Hours Worked",
+                disabled=False,
+                min_value=0,
+                max_value=24,
+                step=0.01,
+                format="%.2f",
+                help="Hours worked (e.g., 7.04 = 7 hours 4 minutes)"
+            ),
+            "Daily Earnings": st.column_config.NumberColumn(
+                "Daily Earnings ($)",
+                disabled=False,
+                min_value=0,
+                step=0.01,
+                format="$%.2f",
+                help="Enter daily earnings"
+            ),
+            "Daily Goal": st.column_config.NumberColumn(
+                "Daily Goal ($)",
+                disabled=False,
+                min_value=0,
+                step=0.01,
+                format="$%.2f",
+                help="Daily earnings goal"
+            ),
+            "Difference": st.column_config.NumberColumn(
+                "Difference ($)",
+                disabled=True,
+                format="$%.2f"
+            ),
+            "Status": st.column_config.TextColumn(
+                "Status",
+                disabled=True
+            )
+        },
+        hide_index=True,
     )
-
-    if st.button("Commit & Recalculate Difference"):
-        if {"Total Earnings", "Monthly Goal"}.issubset(edited_uber.columns):
-            edited_uber["Difference"] = pd.to_numeric(
-                edited_uber["Total Earnings"], errors="coerce"
-            ) - pd.to_numeric(edited_uber["Monthly Goal"], errors="coerce")
-        st.session_state.uber = edited_uber
+    
+    col1, col2, col3 = st.columns([1,1,2])
+    with col1:
+        if st.button("🧮 Calculate Totals", key="calc_uber"):
+            # Calculate difference and status
+            edited_uber["Difference"] = edited_uber["Daily Earnings"] - edited_uber["Daily Goal"]
+            edited_uber["Status"] = edited_uber["Difference"].apply(lambda x: "Goal Met" if x >= 0 else "Below Goal")
+            
+            # Update the main dataframe
+            if selected_week != "All Weeks":
+                # Update only the selected rows in the main dataframe
+                start_idx = 0
+                if selected_week == "Week 1 (Mar 2-8)":
+                    start_idx = 0
+                elif selected_week == "Week 2 (Mar 9-15)":
+                    start_idx = 7
+                elif selected_week == "Week 3 (Mar 16-22)":
+                    start_idx = 14
+                elif selected_week == "Week 4 (Mar 23-29)":
+                    start_idx = 21
+                
+                for i, row in edited_uber.iterrows():
+                    if start_idx + i < len(st.session_state.uber):
+                        st.session_state.uber.iloc[start_idx + i] = row
+            else:
+                st.session_state.uber = edited_uber
+            
+            # Calculate week totals
+            week_total_hours = edited_uber["Hours"].sum()
+            week_total_earnings = edited_uber["Daily Earnings"].sum()
+            week_total_goal = edited_uber["Daily Goal"].sum()
+            
+            st.success("✅ Calculations complete!")
+            
+    with col2:
+        if st.button("💾 Save All Changes", key="save_uber"):
+            # Save all changes
+            if selected_week != "All Weeks":
+                start_idx = 0
+                if selected_week == "Week 1 (Mar 2-8)":
+                    start_idx = 0
+                elif selected_week == "Week 2 (Mar 9-15)":
+                    start_idx = 7
+                elif selected_week == "Week 3 (Mar 16-22)":
+                    start_idx = 14
+                elif selected_week == "Week 4 (Mar 23-29)":
+                    start_idx = 21
+                
+                for i, row in edited_uber.iterrows():
+                    if start_idx + i < len(st.session_state.uber):
+                        st.session_state.uber.iloc[start_idx + i] = row
+            else:
+                st.session_state.uber = edited_uber
+            st.success("💾 All changes saved!")
+            st.rerun()
+    
+    # Show week summary
+    st.markdown("---")
+    st.subheader("📊 Week Summary")
+    
+    # Calculate totals
+    if len(edited_uber) > 0:
+        total_hours = edited_uber["Hours"].sum()
+        total_earnings = edited_uber["Daily Earnings"].sum()
+        total_goal = edited_uber["Daily Goal"].sum()
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Hours", f"{total_hours:.2f}")
+        m2.metric("Total Earnings", f"${total_earnings:.2f}")
+        m3.metric("Total Goal", f"${total_goal:.2f}")
+        m4.metric("Net vs Goal", f"${(total_earnings - total_goal):.2f}")
+    
+    # Add new row button at bottom
+    st.markdown("---")
+    if st.button("➕ Add New Row", key="add_row"):
+        new_row = pd.DataFrame({
+            'Day': ['New Day'],
+            'Date': [pd.Timestamp.now()],
+            'Hours': [0],
+            'Daily Earnings': [0],
+            'Daily Goal': [175],
+            'Difference': [0],
+            'Status': ['Below Goal']
+        })
+        st.session_state.uber = pd.concat([st.session_state.uber, new_row], ignore_index=True)
         st.rerun()
