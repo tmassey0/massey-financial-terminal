@@ -6,66 +6,87 @@ import numpy as np
 # --- SETTINGS & THEME ---
 st.set_page_config(page_title="MASSEY STRATEGIC CAPITAL", layout="wide")
 
-# Simplified CSS to prevent the TypeError
+# Single-line CSS to prevent IndentationErrors in Markdown
 st.markdown("<style>html, body, [class*='st-at'] { background-color: #0B0E14; color: #E2E8F0; } div[data-testid='stMetric'] { background-color: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 20px !important; } .stTabs [aria-selected='true'] { color: #38BDF8 !important; border-bottom: 2px solid #38BDF8 !important; }</style>", unsafe_allow_stdio=True)
 
 # --- DATA ENGINE ---
 def load_data():
     try:
-        # These filenames must match your GitHub uploads exactly
+        # File names must match your GitHub uploads exactly
         cards = pd.read_csv('Terrance Credit Card 1.xlsx - Credit Cards.csv', skiprows=1)
         bills = pd.read_csv('Terrance Credit Card 1.xlsx - Bill Master List.csv', skiprows=1)
+        # Using March specifically as the active operational month
         uber_march = pd.read_csv('Terrance Uber Tracker.xlsx - March.csv', skiprows=3)
         return cards, bills, uber_march
     except Exception as e:
-        st.error(f"Data Load Error: {e}")
+        st.error(f"System Link Error: {e}")
         return None, None, None
 
 cards_df, bills_df, march_df = load_data()
 
-# --- SIDEBAR ---
+# --- SIDEBAR: EXECUTIVE CONTROLS ---
 with st.sidebar:
     st.title("MASSEY CAPITAL")
     st.divider()
+    st.subheader("Operational Controls")
     target_daily = st.slider("Daily Revenue Target", 100, 300, 150)
     tax_reserve_pct = st.slider("Tax/Maint. Reserve (%)", 0, 30, 15)
+    st.divider()
+    st.caption("Terminal v3.1 | Corporate Edition")
 
 # --- MAIN TERMINAL ---
 if cards_df is not None:
     st.title("🏛️ Executive Financial Terminal")
+    st.markdown("##### Portfolio Monitoring & Liquidity Optimization")
     
+    # Global Metrics Calculation
     total_liabilities = cards_df['Total Current Balance'].sum()
     total_credit_limit = cards_df['Credit Limit'].sum()
     weighted_util = (total_liabilities / total_credit_limit) * 100
     monthly_burn = bills_df[bills_df['Active'] == 'Yes']['Amount'].sum()
     
+    # Dashboard KPI Row
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TOTAL LIABILITIES", f"${total_liabilities:,.2f}")
     m2.metric("AVG UTILIZATION", f"{weighted_util:.1f}%")
     m3.metric("MONTHLY BURN", f"${monthly_burn:,.2f}")
-    m4.metric("TARGET APR", "35.9%")
+    m4.metric("HIGH APR RISK", "35.9%")
 
-st.divider()
-    tabs = st.tabs(["📊 PERFORMANCE", "💳 LIABILITY MATRIX", "📅 OPERATIONS"])
+    st.divider()
+
+    tabs = st.tabs(["📊 PERFORMANCE", "💳 LIABILITY MATRIX", "🛡️ RESERVES", "📅 OPERATIONS"])
 
     with tabs[0]:
         st.subheader("Revenue Velocity vs. Liability Reduction")
-        # Logic for the projection chart
+        # Projection logic: Total Debt - (Monthly Surplus Approx $1344)
         projection = [total_liabilities - (i * 1344) for i in range(5)]
         months = ['MAR', 'APR', 'MAY', 'JUN', 'JUL']
-        fig = go.Figure(go.Scatter(x=months, y=[max(0, p) for p in projection], fill='tozeroy', line=dict(color='#0EA5E9')))
+        fig = go.Figure(go.Scatter(x=months, y=[max(0, p) for p in projection], 
+                                 mode='lines+markers', name='Liabilities',
+                                 line=dict(color='#0EA5E9', width=4),
+                                 fill='tozeroy'))
         fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
 
     with tabs[1]:
-        st.subheader("Credit Portfolio Risk Analysis")
+        st.subheader("Credit Portfolio Analysis")
         cards_df['Util %'] = (cards_df['Total Current Balance'] / cards_df['Credit Limit']) * 100
-        # High-end table display
         st.table(cards_df[['Bank Name', 'Total Current Balance', 'Credit Limit', 'Util %']])
 
     with tabs[2]:
-        st.subheader("Upcoming Operational Outflows")
-        # This is where your error was—the line below is now properly indented
+        st.subheader("Tax & Operational Reserves")
+        est_rev = target_daily * 30
+        tax_reserve = est_rev * (tax_reserve_pct / 100)
+        net_surplus = est_rev - tax_reserve - monthly_burn
+        
+        r1, r2, r3 = st.columns(3)
+        r1.metric("EST. REVENUE", f"${est_rev:,.2f}")
+        r2.metric("TAX/MAINT RESERVE", f"${tax_reserve:,.2f}")
+        r3.metric("NET FOR DEBT", f"${max(0, net_surplus):,.2f}")
+
+    with tabs[3]:
+        st.subheader("Operational Calendar")
+        # Ensure 'Due Day' is sorted for professional scheduling
         st.dataframe(bills_df[bills_df['Active'] == 'Yes'].sort_values('Due Day')[['Bill Name', 'Amount', 'Due Day']])
 else:
-    st.warning("Data Feeds Not Detected. Please ensure CSV files are uploaded to your GitHub repository.")
+    st.error("Data Feeds Not Detected. Ensure CSV files are in the GitHub repository.")
