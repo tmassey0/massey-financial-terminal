@@ -51,6 +51,11 @@ def load_excel_file(file_path, sheet_name):
         st.sidebar.error(f"Error loading {file_path}: {e}")
         return pd.DataFrame()
 
+# --- SAFE DATAFRAME CHECK FUNCTION ---
+def safe_df_check(df):
+    """Safely check if a variable is a non-empty DataFrame"""
+    return df is not None and isinstance(df, pd.DataFrame) and not df.empty
+
 # --- LOAD DATA ---
 # Credit Card Data - Filter out empty rows
 if 'cards_df' not in st.session_state:
@@ -121,8 +126,8 @@ with tabs[0]:
     if st.session_state.show_overview:
         col1, col2, col3, col4 = st.columns(4)
         
-        # Calculate card totals
-        if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
+        # Calculate card totals with safe check
+        if safe_df_check(st.session_state.get('cards_df')):
             # Find balance and limit columns
             balance_col = None
             limit_col = None
@@ -167,7 +172,7 @@ with tabs[0]:
         st.markdown('<p class="dashboard-header">🚖 REVENUE METRICS</p>', unsafe_allow_html=True)
     
     if st.session_state.show_revenue:
-        if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
+        if safe_df_check(st.session_state.get('revenue_df')):
             # Current month revenue
             total_hours = st.session_state.revenue_df['Hours'].sum()
             total_earnings = st.session_state.revenue_df['Earnings'].sum()
@@ -207,7 +212,7 @@ with tabs[0]:
         st.markdown('<p class="dashboard-header">📋 BILL METRICS</p>', unsafe_allow_html=True)
     
     if st.session_state.show_bills:
-        if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
+        if safe_df_check(st.session_state.get('bills_df')):
             # Find amount column
             amount_col = None
             for col in st.session_state.bills_df.columns:
@@ -265,8 +270,8 @@ with tabs[0]:
         st.markdown('<p class="dashboard-header">💰 CASH FLOW</p>', unsafe_allow_html=True)
     
     if st.session_state.show_cashflow:
-        revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
-        bills_exists = 'bills_df' in st.session_state and not st.session_state.bills_df.empty
+        revenue_exists = safe_df_check(st.session_state.get('revenue_df'))
+        bills_exists = safe_df_check(st.session_state.get('bills_df'))
         
         if revenue_exists and bills_exists:
             monthly_revenue = st.session_state.revenue_df['Earnings'].sum()
@@ -305,7 +310,7 @@ with tabs[0]:
 with tabs[1]:
     st.header("Credit Card Management")
     
-    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
+    if safe_df_check(st.session_state.get('cards_df')):
         edited_cards = st.data_editor(
             st.session_state.cards_df,
             num_rows="dynamic",
@@ -334,7 +339,7 @@ with tabs[1]:
 with tabs[2]:
     st.header("Bill Management")
     
-    if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
+    if safe_df_check(st.session_state.get('bills_df')):
         edited_bills = st.data_editor(
             st.session_state.bills_df,
             num_rows="dynamic",
@@ -372,7 +377,7 @@ with tabs[3]:
     st.info(f"Editing {selected_month} 2026 - Changes calculate automatically!")
     
     # Ensure revenue_df exists and is properly formatted
-    if 'revenue_df' not in st.session_state or st.session_state.revenue_df.empty:
+    if not safe_df_check(st.session_state.get('revenue_df')):
         sample_data = {
             'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
             'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
@@ -441,7 +446,7 @@ with tabs[3]:
             st.error(f"Error saving changes: {e}")
     
     # Display the data editor with safe initialization
-    if not working_df.empty:
+    if safe_df_check(working_df):
         edited_revenue = st.data_editor(
             working_df,
             num_rows="dynamic",
