@@ -54,14 +54,12 @@ if 'bills_df' not in st.session_state:
     else:
         st.session_state.bills_df = pd.DataFrame()
 
-# Uber Data - Start with a simple dataframe
+# Uber Data - Start with a simple dataframe with consistent column names
 if 'uber_df' not in st.session_state:
-    # Create sample data for demonstration
+    # Create sample data for demonstration with clear column names
     sample_data = {
         'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        'Date': [datetime.date(2026, 3, 2), datetime.date(2026, 3, 3), datetime.date(2026, 3, 4), 
-                 datetime.date(2026, 3, 5), datetime.date(2026, 3, 6), datetime.date(2026, 3, 7), 
-                 datetime.date(2026, 3, 8)],
+        'Date': ['3/2/2026', '3/3/2026', '3/4/2026', '3/5/2026', '3/6/2026', '3/7/2026', '3/8/2026'],
         'Hours': [8.53, 0, 0, 0, 0, 0, 0],
         'Daily Earnings': [224.70, 0, 0, 0, 0, 0, 0],
         'Daily Goal': [150, 150, 150, 150, 150, 150, 150],
@@ -109,7 +107,7 @@ with tabs[0]:
         col1.metric("Total Balance", "$0.00")
         col2.metric("Total Credit Limit", "$0.00")
         col3.metric("Utilization", "0%")
-        st.info("Load card data to see metrics")
+        st.info("Add cards in the CARDS tab to see metrics")
 
 # --- TAB 2: CARDS ---
 with tabs[1]:
@@ -124,10 +122,22 @@ with tabs[1]:
         )
         st.session_state.cards_df = edited_cards
         
-        if st.button("Save Cards"):
+        if st.button("Save Cards", key="save_cards"):
             st.success("Cards saved!")
     else:
-        st.warning("No card data available. Please check the Excel file.")
+        st.warning("No card data available. You can add cards manually.")
+        # Create empty template for cards
+        if st.button("Create Card Template"):
+            template = pd.DataFrame({
+                'Card ID': ['Card1', 'Card2'],
+                'Bank Name': ['Navy Federal', 'Indigo'],
+                'Credit Limit': [1500, 500],
+                'APR': [0.18, 0.359],
+                'Current Balance': [1500, 632.81],
+                'Active': ['Yes', 'Yes']
+            })
+            st.session_state.cards_df = template
+            st.rerun()
 
 # --- TAB 3: BILLS ---
 with tabs[2]:
@@ -142,10 +152,22 @@ with tabs[2]:
         )
         st.session_state.bills_df = edited_bills
         
-        if st.button("Save Bills"):
+        if st.button("Save Bills", key="save_bills"):
             st.success("Bills saved!")
     else:
-        st.warning("No bill data available. Please check the Excel file.")
+        st.warning("No bill data available. You can add bills manually.")
+        # Create empty template for bills
+        if st.button("Create Bill Template"):
+            template = pd.DataFrame({
+                'Bill Name': ['Storage 1', 'Storage 2'],
+                'Amount': [478, 109],
+                'Due Day': [1, 1],
+                'Pay Via': ['Card1', 'Card1'],
+                'Category': ['Housing', 'Housing'],
+                'Active': ['Yes', 'Yes']
+            })
+            st.session_state.bills_df = template
+            st.rerun()
 
 # --- TAB 4: UBER ---
 with tabs[3]:
@@ -158,64 +180,134 @@ with tabs[3]:
     
     st.info(f"Editing {selected_month} 2026 - Changes calculate automatically!")
     
-    # Create editor with auto-calculation
+    # Make a copy of the dataframe for editing
+    if 'uber_df' in st.session_state:
+        working_df = st.session_state.uber_df.copy()
+    else:
+        working_df = pd.DataFrame(columns=['Day', 'Date', 'Hours', 'Daily Earnings', 'Daily Goal', 'Difference', 'Status'])
+    
+    # Define the update function with error handling
     def update_uber_data():
-        if 'uber_editor' in st.session_state:
-            df = st.session_state.uber_editor
-            # Calculate difference and status
-            df['Difference'] = df['Daily Earnings'] - df['Daily Goal']
-            df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-            st.session_state.uber_df = df
+        try:
+            if 'uber_editor' in st.session_state and st.session_state.uber_editor is not None:
+                df = st.session_state.uber_editor
+                
+                # Check if required columns exist
+                required_cols = ['Daily Earnings', 'Daily Goal']
+                if all(col in df.columns for col in required_cols):
+                    # Calculate difference
+                    df['Difference'] = df['Daily Earnings'] - df['Daily Goal']
+                    
+                    # Calculate status
+                    df['Status'] = df['Difference'].apply(
+                        lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
+                    )
+                    
+                    # Update session state
+                    st.session_state.uber_df = df
+        except Exception as e:
+            st.error(f"Error in calculation: {e}")
     
     # Display the data editor
     edited_uber = st.data_editor(
-        st.session_state.uber_df,
+        working_df,
         num_rows="dynamic",
         use_container_width=True,
         key="uber_editor",
         on_change=update_uber_data,
         column_config={
-            "Day": st.column_config.TextColumn("Day", disabled=True),
-            "Date": st.column_config.DateColumn("Date", disabled=False, format="MM/DD/YYYY"),
-            "Hours": st.column_config.NumberColumn("Hours", min_value=0.0, max_value=24.0, step=0.01, format="%.2f"),
-            "Daily Earnings": st.column_config.NumberColumn("Earnings ($)", min_value=0.0, step=0.01, format="$%.2f"),
-            "Daily Goal": st.column_config.NumberColumn("Goal ($)", min_value=0.0, step=0.01, format="$%.2f"),
-            "Difference": st.column_config.NumberColumn("Diff ($)", disabled=True, format="$%.2f"),
-            "Status": st.column_config.TextColumn("Status", disabled=True)
+            "Day": st.column_config.TextColumn(
+                "Day",
+                disabled=False,
+                width="small"
+            ),
+            "Date": st.column_config.TextColumn(
+                "Date",
+                disabled=False,
+                width="small"
+            ),
+            "Hours": st.column_config.NumberColumn(
+                "Hours",
+                min_value=0.0,
+                max_value=24.0,
+                step=0.01,
+                format="%.2f",
+                disabled=False
+            ),
+            "Daily Earnings": st.column_config.NumberColumn(
+                "Earnings ($)",
+                min_value=0.0,
+                step=0.01,
+                format="$%.2f",
+                disabled=False
+            ),
+            "Daily Goal": st.column_config.NumberColumn(
+                "Goal ($)",
+                min_value=0.0,
+                step=0.01,
+                format="$%.2f",
+                disabled=False
+            ),
+            "Difference": st.column_config.NumberColumn(
+                "Diff ($)",
+                disabled=True,
+                format="$%.2f"
+            ),
+            "Status": st.column_config.TextColumn(
+                "Status",
+                disabled=True
+            )
         },
         hide_index=True,
     )
+    
+    # Manual update button
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("🔄 Update Calculations"):
+            if not edited_uber.empty:
+                edited_uber['Difference'] = edited_uber['Daily Earnings'] - edited_uber['Daily Goal']
+                edited_uber['Status'] = edited_uber['Difference'].apply(
+                    lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
+                )
+                st.session_state.uber_df = edited_uber
+                st.success("Calculations updated!")
+                st.rerun()
     
     # Summary section
     st.markdown("---")
     st.subheader("Weekly Summary")
     
-    # Calculate totals
-    total_hours = edited_uber['Hours'].sum()
-    total_earnings = edited_uber['Daily Earnings'].sum()
-    total_goal = edited_uber['Daily Goal'].sum()
-    total_diff = total_earnings - total_goal
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Hours", f"{total_hours:.2f}")
-    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-    col3.metric("Total Goal", f"${total_goal:,.2f}")
-    
-    if total_diff >= 0:
-        col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
-    else:
-        col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
+    # Calculate totals from the current dataframe
+    if not edited_uber.empty:
+        try:
+            total_hours = edited_uber['Hours'].sum()
+            total_earnings = edited_uber['Daily Earnings'].sum()
+            total_goal = edited_uber['Daily Goal'].sum()
+            total_diff = total_earnings - total_goal
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Hours", f"{total_hours:.2f}")
+            col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+            col3.metric("Total Goal", f"${total_goal:,.2f}")
+            
+            if total_diff >= 0:
+                col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
+            else:
+                col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
+        except Exception as e:
+            st.error(f"Error calculating totals: {e}")
     
     # Add new row button
     if st.button("➕ Add New Day"):
         new_row = pd.DataFrame({
             'Day': ['New Day'],
-            'Date': [datetime.date.today()],
+            'Date': [datetime.datetime.now().strftime("%m/%d/%Y")],
             'Hours': [0.0],
             'Daily Earnings': [0.0],
             'Daily Goal': [175.0],
             'Difference': [-175.0],
-            'Status': ['Below Goal']
+            'Status': ['⚠️ Below Goal']
         })
         st.session_state.uber_df = pd.concat([st.session_state.uber_df, new_row], ignore_index=True)
         st.rerun()
