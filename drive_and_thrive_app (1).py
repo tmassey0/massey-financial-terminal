@@ -25,23 +25,6 @@ st.markdown("""
         color: #FFD700;
         cursor: pointer;
     }
-    .collapsible-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background-color: #1E1E1E;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-        border: 1px solid #30363D;
-    }
-    .collapsible-header:hover {
-        background-color: #2D2D2D;
-    }
-    .arrow {
-        font-size: 1.2rem;
-        color: #FFD700;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,13 +76,13 @@ if 'bills_df' not in st.session_state:
 
 # Revenue Data with undo history
 if 'revenue_df' not in st.session_state:
-    # Create sample data
+    # Create sample data with proper structure
     sample_data = {
         'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        'Date': ['3/2/2026', '3/3/2026', '3/4/2026', '3/5/2026', '3/6/2026', '3/7/2026', '3/8/2026'],
-        'Hours': [8.53, 0, 0, 0, 0, 0, 0],
-        'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
-        'Goal': [150, 150, 150, 150, 150, 150, 150]
+        'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
+        'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
     }
     st.session_state.revenue_df = pd.DataFrame(sample_data)
     st.session_state.revenue_history = []  # For undo functionality
@@ -128,7 +111,8 @@ with tabs[0]:
     # OVERVIEW SECTION with collapsible arrow
     col1, col2 = st.columns([1, 20])
     with col1:
-        if st.button("▼" if st.session_state.show_overview else "▶", key="toggle_overview"):
+        arrow = "▼" if st.session_state.show_overview else "▶"
+        if st.button(arrow, key="toggle_overview"):
             st.session_state.show_overview = not st.session_state.show_overview
             st.rerun()
     with col2:
@@ -175,7 +159,8 @@ with tabs[0]:
     # REVENUE SECTION with collapsible arrow
     col1, col2 = st.columns([1, 20])
     with col1:
-        if st.button("▼" if st.session_state.show_revenue else "▶", key="toggle_revenue"):
+        arrow = "▼" if st.session_state.show_revenue else "▶"
+        if st.button(arrow, key="toggle_revenue"):
             st.session_state.show_revenue = not st.session_state.show_revenue
             st.rerun()
     with col2:
@@ -214,7 +199,8 @@ with tabs[0]:
     # BILL METRICS SECTION with collapsible arrow
     col1, col2 = st.columns([1, 20])
     with col1:
-        if st.button("▼" if st.session_state.show_bills else "▶", key="toggle_bills"):
+        arrow = "▼" if st.session_state.show_bills else "▶"
+        if st.button(arrow, key="toggle_bills"):
             st.session_state.show_bills = not st.session_state.show_bills
             st.rerun()
     with col2:
@@ -271,7 +257,8 @@ with tabs[0]:
     # CASH FLOW SECTION with collapsible arrow
     col1, col2 = st.columns([1, 20])
     with col1:
-        if st.button("▼" if st.session_state.show_cashflow else "▶", key="toggle_cashflow"):
+        arrow = "▼" if st.session_state.show_cashflow else "▶"
+        if st.button(arrow, key="toggle_cashflow"):
             st.session_state.show_cashflow = not st.session_state.show_cashflow
             st.rerun()
     with col2:
@@ -384,19 +371,21 @@ with tabs[3]:
     
     st.info(f"Editing {selected_month} 2026 - Changes calculate automatically!")
     
-    # Make sure revenue_df exists
-    if 'revenue_df' not in st.session_state:
+    # Ensure revenue_df exists and is properly formatted
+    if 'revenue_df' not in st.session_state or st.session_state.revenue_df.empty:
         sample_data = {
             'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-            'Date': ['3/2/2026', '3/3/2026', '3/4/2026', '3/5/2026', '3/6/2026', '3/7/2026', '3/8/2026'],
-            'Hours': [8.53, 0, 0, 0, 0, 0, 0],
-            'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
-            'Goal': [150, 150, 150, 150, 150, 150, 150]
+            'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
+            'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
         }
         st.session_state.revenue_df = pd.DataFrame(sample_data)
+    
+    if 'revenue_history' not in st.session_state:
         st.session_state.revenue_history = []
     
-    # Make a copy of the dataframe for editing
+    # Make a clean copy for editing
     working_df = st.session_state.revenue_df.copy()
     
     # Action buttons
@@ -415,9 +404,7 @@ with tabs[3]:
     with col2:
         # Add week button
         if st.button("📅 Add Week", key="add_week"):
-            # Save state for undo
-            if 'revenue_history' not in st.session_state:
-                st.session_state.revenue_history = []
+            # Save current state for undo
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
             
             days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -428,7 +415,7 @@ with tabs[3]:
                 week_date = current_date + datetime.timedelta(days=i)
                 week_rows.append({
                     'Day': day,
-                    'Date': week_date.strftime("%m/%d/%Y"),
+                    'Date': week_date.strftime("%Y-%m-%d"),
                     'Hours': 0.0,
                     'Earnings': 0.0,
                     'Goal': 175.0
@@ -442,11 +429,7 @@ with tabs[3]:
     def update_revenue_data():
         try:
             if 'revenue_editor' in st.session_state and st.session_state.revenue_editor is not None:
-                # Initialize history if needed
-                if 'revenue_history' not in st.session_state:
-                    st.session_state.revenue_history = []
-                
-                # Save current state for undo before making changes
+                # Save current state for undo
                 st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
                 # Keep only last 10 undo states
                 if len(st.session_state.revenue_history) > 10:
@@ -455,58 +438,58 @@ with tabs[3]:
                 # Update session state
                 st.session_state.revenue_df = st.session_state.revenue_editor
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error saving changes: {e}")
     
-    # Display the data editor
-    edited_revenue = st.data_editor(
-        working_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="revenue_editor",
-        on_change=update_revenue_data,
-        column_config={
-            "Day": st.column_config.TextColumn(
-                "Day",
-                disabled=False,
-                width="small"
-            ),
-            "Date": st.column_config.TextColumn(
-                "Date",
-                disabled=False,
-                width="small"
-            ),
-            "Hours": st.column_config.NumberColumn(
-                "Hours",
-                min_value=0.0,
-                max_value=24.0,
-                step=0.01,
-                format="%.2f",
-                disabled=False
-            ),
-            "Earnings": st.column_config.NumberColumn(
-                "Earnings ($)",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f",
-                disabled=False
-            ),
-            "Goal": st.column_config.NumberColumn(
-                "Goal ($)",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f",
-                disabled=False
-            )
-        },
-        hide_index=True,
-    )
-    
-    # Summary section
-    st.markdown("---")
-    st.subheader("📊 Summary")
-    
-    # Calculate totals
-    if not edited_revenue.empty:
+    # Display the data editor with safe initialization
+    if not working_df.empty:
+        edited_revenue = st.data_editor(
+            working_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="revenue_editor",
+            on_change=update_revenue_data,
+            column_config={
+                "Day": st.column_config.TextColumn(
+                    "Day",
+                    disabled=False,
+                    width="small"
+                ),
+                "Date": st.column_config.TextColumn(
+                    "Date",
+                    disabled=False,
+                    width="small"
+                ),
+                "Hours": st.column_config.NumberColumn(
+                    "Hours",
+                    min_value=0.0,
+                    max_value=24.0,
+                    step=0.01,
+                    format="%.2f",
+                    disabled=False
+                ),
+                "Earnings": st.column_config.NumberColumn(
+                    "Earnings ($)",
+                    min_value=0.0,
+                    step=0.01,
+                    format="$%.2f",
+                    disabled=False
+                ),
+                "Goal": st.column_config.NumberColumn(
+                    "Goal ($)",
+                    min_value=0.0,
+                    step=0.01,
+                    format="$%.2f",
+                    disabled=False
+                )
+            },
+            hide_index=True,
+        )
+        
+        # Summary section
+        st.markdown("---")
+        st.subheader("📊 Summary")
+        
+        # Calculate totals
         total_hours = edited_revenue['Hours'].sum()
         total_earnings = edited_revenue['Earnings'].sum()
         total_goal = edited_revenue['Goal'].sum()
@@ -530,3 +513,15 @@ with tabs[3]:
                     w1.metric("Hours", f"{week_data['Hours'].sum():.2f}")
                     w2.metric("Earnings", f"${week_data['Earnings'].sum():,.2f}")
                     w3.metric("Goal", f"${week_data['Goal'].sum():,.2f}")
+    else:
+        st.error("No revenue data available. Please create a template.")
+        if st.button("Create Revenue Template"):
+            sample_data = {
+                'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+                'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
+                'Hours': [8.53, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                'Earnings': [224.70, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                'Goal': [150.0, 150.0, 150.0, 150.0, 150.0, 150.0, 150.0]
+            }
+            st.session_state.revenue_df = pd.DataFrame(sample_data)
+            st.rerun()
