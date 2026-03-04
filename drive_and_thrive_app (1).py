@@ -23,6 +23,24 @@ st.markdown("""
         font-weight: 600;
         margin-bottom: 1rem;
         color: #FFD700;
+        cursor: pointer;
+    }
+    .collapsible-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background-color: #1E1E1E;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        border: 1px solid #30363D;
+    }
+    .collapsible-header:hover {
+        background-color: #2D2D2D;
+    }
+    .arrow {
+        font-size: 1.2rem;
+        color: #FFD700;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -87,6 +105,16 @@ if 'revenue_df' not in st.session_state:
     st.session_state.revenue_history = []  # For undo functionality
     st.session_state.current_month = "March"
 
+# Initialize collapsible section states
+if 'show_overview' not in st.session_state:
+    st.session_state.show_overview = True
+if 'show_revenue' not in st.session_state:
+    st.session_state.show_revenue = True
+if 'show_bills' not in st.session_state:
+    st.session_state.show_bills = True
+if 'show_cashflow' not in st.session_state:
+    st.session_state.show_cashflow = True
+
 # --- MAIN APP ---
 st.title("🏛️ Strategic Capital Terminal")
 
@@ -97,145 +125,194 @@ tabs = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📅 BILLS", "💰 REVENUE"])
 with tabs[0]:
     st.header("Financial Dashboard")
     
-    # Top Level Metrics
-    st.markdown('<p class="dashboard-header">📈 OVERVIEW</p>', unsafe_allow_html=True)
+    # OVERVIEW SECTION with collapsible arrow
+    col1, col2 = st.columns([1, 20])
+    with col1:
+        if st.button("▼" if st.session_state.show_overview else "▶", key="toggle_overview"):
+            st.session_state.show_overview = not st.session_state.show_overview
+            st.rerun()
+    with col2:
+        st.markdown('<p class="dashboard-header">📈 OVERVIEW</p>', unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns(4)
-    
-    # Calculate card totals
-    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
-        # Find balance and limit columns
-        balance_col = None
-        limit_col = None
+    if st.session_state.show_overview:
+        col1, col2, col3, col4 = st.columns(4)
         
-        for col in st.session_state.cards_df.columns:
-            if 'Total Current Balance' in str(col) or 'Balance' in str(col):
-                balance_col = col
-            if 'Credit Limit' in str(col) or 'Limit' in str(col):
-                limit_col = col
-        
-        if balance_col and limit_col:
-            total_balance = pd.to_numeric(st.session_state.cards_df[balance_col], errors='coerce').sum()
-            total_limit = pd.to_numeric(st.session_state.cards_df[limit_col], errors='coerce').sum()
-            available_credit = total_limit - total_balance
+        # Calculate card totals
+        if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
+            # Find balance and limit columns
+            balance_col = None
+            limit_col = None
             
-            col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
-            col2.metric("Total Balance", f"${total_balance:,.2f}")
-            col3.metric("Available Credit", f"${available_credit:,.2f}")
+            for col in st.session_state.cards_df.columns:
+                if 'Total Current Balance' in str(col) or 'Balance' in str(col):
+                    balance_col = col
+                if 'Credit Limit' in str(col) or 'Limit' in str(col):
+                    limit_col = col
             
-            utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-            col4.metric("Overall Utilization", f"{utilization:.1f}%")
+            if balance_col and limit_col:
+                total_balance = pd.to_numeric(st.session_state.cards_df[balance_col], errors='coerce').sum()
+                total_limit = pd.to_numeric(st.session_state.cards_df[limit_col], errors='coerce').sum()
+                available_credit = total_limit - total_balance
+                
+                col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
+                col2.metric("Total Balance", f"${total_balance:,.2f}")
+                col3.metric("Available Credit", f"${available_credit:,.2f}")
+                
+                utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
+                col4.metric("Overall Utilization", f"{utilization:.1f}%")
+            else:
+                col1.metric("Total Credit Limit", "$0.00")
+                col2.metric("Total Balance", "$0.00")
+                col3.metric("Available Credit", "$0.00")
+                col4.metric("Overall Utilization", "0%")
         else:
             col1.metric("Total Credit Limit", "$0.00")
             col2.metric("Total Balance", "$0.00")
             col3.metric("Available Credit", "$0.00")
             col4.metric("Overall Utilization", "0%")
-    else:
-        col1.metric("Total Credit Limit", "$0.00")
-        col2.metric("Total Balance", "$0.00")
-        col3.metric("Available Credit", "$0.00")
-        col4.metric("Overall Utilization", "0%")
-        st.info("Add cards in the CARDS tab to see metrics")
+            st.info("Add cards in the CARDS tab to see metrics")
     
-    # Revenue Metrics
-    st.markdown('<p class="dashboard-header">🚖 REVENUE METRICS</p>', unsafe_allow_html=True)
+    # REVENUE SECTION with collapsible arrow
+    col1, col2 = st.columns([1, 20])
+    with col1:
+        if st.button("▼" if st.session_state.show_revenue else "▶", key="toggle_revenue"):
+            st.session_state.show_revenue = not st.session_state.show_revenue
+            st.rerun()
+    with col2:
+        st.markdown('<p class="dashboard-header">🚖 REVENUE METRICS</p>', unsafe_allow_html=True)
     
-    if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
-        # Current month revenue
-        total_hours = st.session_state.revenue_df['Hours'].sum()
-        total_earnings = st.session_state.revenue_df['Earnings'].sum()
-        total_goal = st.session_state.revenue_df['Goal'].sum()
-        avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Hours", f"{total_hours:.2f}")
-        col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-        col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
-        col4.metric("Avg Hourly Rate", f"${avg_hourly:.2f}")
-        
-        # Days above/below goal
-        days_above = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] >= st.session_state.revenue_df['Goal']])
-        days_below = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] < st.session_state.revenue_df['Goal']])
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Days Above Goal", f"{days_above}")
-        col2.metric("Days Below Goal", f"{days_below}")
-        col3.metric("Success Rate", f"{(days_above/len(st.session_state.revenue_df)*100):.1f}%" if len(st.session_state.revenue_df) > 0 else "0%")
-    else:
-        col1.metric("Total Hours", "0")
-        col2.metric("Total Earnings", "$0")
-        col3.metric("Goal vs Actual", "$0")
-        col4.metric("Avg Hourly Rate", "$0")
-        st.info("Add revenue data in the REVENUE tab to see metrics")
-    
-    # Bill Metrics
-    st.markdown('<p class="dashboard-header">📋 BILL METRICS</p>', unsafe_allow_html=True)
-    
-    if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
-        # Find amount column
-        amount_col = None
-        for col in st.session_state.bills_df.columns:
-            if 'Amount' in str(col):
-                amount_col = col
-                break
-        
-        if amount_col:
-            total_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
+    if st.session_state.show_revenue:
+        if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
+            # Current month revenue
+            total_hours = st.session_state.revenue_df['Hours'].sum()
+            total_earnings = st.session_state.revenue_df['Earnings'].sum()
+            total_goal = st.session_state.revenue_df['Goal'].sum()
+            avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
             
-            # Count active bills
-            active_col = None
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Hours", f"{total_hours:.2f}")
+            col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+            col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
+            col4.metric("Avg Hourly Rate", f"${avg_hourly:.2f}")
+            
+            # Days above/below goal
+            days_above = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] >= st.session_state.revenue_df['Goal']])
+            days_below = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] < st.session_state.revenue_df['Goal']])
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Days Above Goal", f"{days_above}")
+            col2.metric("Days Below Goal", f"{days_below}")
+            col3.metric("Success Rate", f"{(days_above/len(st.session_state.revenue_df)*100):.1f}%" if len(st.session_state.revenue_df) > 0 else "0%")
+        else:
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Hours", "0")
+            col2.metric("Total Earnings", "$0")
+            col3.metric("Goal vs Actual", "$0")
+            col4.metric("Avg Hourly Rate", "$0")
+            st.info("Add revenue data in the REVENUE tab to see metrics")
+    
+    # BILL METRICS SECTION with collapsible arrow
+    col1, col2 = st.columns([1, 20])
+    with col1:
+        if st.button("▼" if st.session_state.show_bills else "▶", key="toggle_bills"):
+            st.session_state.show_bills = not st.session_state.show_bills
+            st.rerun()
+    with col2:
+        st.markdown('<p class="dashboard-header">📋 BILL METRICS</p>', unsafe_allow_html=True)
+    
+    if st.session_state.show_bills:
+        if 'bills_df' in st.session_state and not st.session_state.bills_df.empty:
+            # Find amount column
+            amount_col = None
             for col in st.session_state.bills_df.columns:
-                if 'Active' in str(col):
-                    active_col = col
+                if 'Amount' in str(col):
+                    amount_col = col
                     break
             
-            if active_col:
-                active_bills = len(st.session_state.bills_df[st.session_state.bills_df[active_col] == 'Yes'])
+            if amount_col:
+                total_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
+                
+                # Count active bills
+                active_col = None
+                for col in st.session_state.bills_df.columns:
+                    if 'Active' in str(col):
+                        active_col = col
+                        break
+                
+                if active_col:
+                    active_bills = len(st.session_state.bills_df[st.session_state.bills_df[active_col] == 'Yes'])
+                else:
+                    active_bills = len(st.session_state.bills_df)
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
+                col2.metric("Active Bills", f"{active_bills}")
+                col3.metric("Avg Bill Amount", f"${total_bills/active_bills:,.2f}" if active_bills > 0 else "$0")
+                
+                # Show bill breakdown by category
+                if 'Category' in st.session_state.bills_df.columns:
+                    with st.expander("View by Category"):
+                        category_totals = st.session_state.bills_df.groupby('Category')[amount_col].sum().reset_index()
+                        category_totals.columns = ['Category', 'Total']
+                        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
+                        st.dataframe(category_totals, use_container_width=True, hide_index=True)
             else:
-                active_bills = len(st.session_state.bills_df)
-            
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Total Monthly Bills", "$0")
+                col2.metric("Active Bills", "0")
+                col3.metric("Avg Bill Amount", "$0")
+        else:
             col1, col2, col3 = st.columns(3)
-            col1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
-            col2.metric("Active Bills", f"{active_bills}")
-            col3.metric("Avg Bill Amount", f"${total_bills/active_bills:,.2f}" if active_bills > 0 else "$0")
-    else:
-        col1.metric("Total Monthly Bills", "$0")
-        col2.metric("Active Bills", "0")
-        col3.metric("Avg Bill Amount", "$0")
-        st.info("Add bills in the BILLS tab to see metrics")
+            col1.metric("Total Monthly Bills", "$0")
+            col2.metric("Active Bills", "0")
+            col3.metric("Avg Bill Amount", "$0")
+            st.info("Add bills in the BILLS tab to see metrics")
     
-    # Cash Flow Overview
-    st.markdown('<p class="dashboard-header">💰 CASH FLOW</p>', unsafe_allow_html=True)
+    # CASH FLOW SECTION with collapsible arrow
+    col1, col2 = st.columns([1, 20])
+    with col1:
+        if st.button("▼" if st.session_state.show_cashflow else "▶", key="toggle_cashflow"):
+            st.session_state.show_cashflow = not st.session_state.show_cashflow
+            st.rerun()
+    with col2:
+        st.markdown('<p class="dashboard-header">💰 CASH FLOW</p>', unsafe_allow_html=True)
     
-    revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
-    bills_exists = 'bills_df' in st.session_state and not st.session_state.bills_df.empty
-    
-    if revenue_exists and bills_exists:
-        monthly_revenue = st.session_state.revenue_df['Earnings'].sum()
+    if st.session_state.show_cashflow:
+        revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
+        bills_exists = 'bills_df' in st.session_state and not st.session_state.bills_df.empty
         
-        # Find amount column for bills
-        amount_col = None
-        for col in st.session_state.bills_df.columns:
-            if 'Amount' in str(col):
-                amount_col = col
-                break
-        
-        if amount_col:
-            monthly_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
-            net_cash = monthly_revenue - monthly_bills
+        if revenue_exists and bills_exists:
+            monthly_revenue = st.session_state.revenue_df['Earnings'].sum()
             
+            # Find amount column for bills
+            amount_col = None
+            for col in st.session_state.bills_df.columns:
+                if 'Amount' in str(col):
+                    amount_col = col
+                    break
+            
+            if amount_col:
+                monthly_bills = pd.to_numeric(st.session_state.bills_df[amount_col], errors='coerce').sum()
+                net_cash = monthly_revenue - monthly_bills
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Monthly Revenue", f"${monthly_revenue:,.2f}")
+                col2.metric("Monthly Bills", f"${monthly_bills:,.2f}")
+                
+                if net_cash >= 0:
+                    col3.metric("Net Cash Flow", f"+${net_cash:,.2f}", delta=f"+${net_cash:,.2f}")
+                else:
+                    col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}", delta=f"-${abs(net_cash):,.2f}", delta_color="inverse")
+                
+                # Show cash flow ratio
+                if monthly_bills > 0:
+                    coverage_ratio = (monthly_revenue / monthly_bills) * 100
+                    st.metric("Bill Coverage Ratio", f"{coverage_ratio:.1f}%")
+        else:
             col1, col2, col3 = st.columns(3)
-            col1.metric("Monthly Revenue", f"${monthly_revenue:,.2f}")
-            col2.metric("Monthly Bills", f"${monthly_bills:,.2f}")
-            
-            if net_cash >= 0:
-                col3.metric("Net Cash Flow", f"+${net_cash:,.2f}", delta=f"+${net_cash:,.2f}")
-            else:
-                col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}", delta=f"-${abs(net_cash):,.2f}", delta_color="inverse")
-    else:
-        col1.metric("Monthly Revenue", "$0")
-        col2.metric("Monthly Bills", "$0")
-        col3.metric("Net Cash Flow", "$0")
+            col1.metric("Monthly Revenue", "$0")
+            col2.metric("Monthly Bills", "$0")
+            col3.metric("Net Cash Flow", "$0")
 
 # --- TAB 2: CARDS ---
 with tabs[1]:
