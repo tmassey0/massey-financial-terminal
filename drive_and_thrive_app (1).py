@@ -144,9 +144,10 @@ with tab3:
 with tab4:
     st.header("💰 Revenue Tracker")
     
-    # Action buttons
+    # Action buttons in columns
     col1, col2, col3 = st.columns([1, 1, 4])
     
+    # Undo button
     with col1:
         if st.button("↩️ Undo", key="undo_revenue"):
             if st.session_state.revenue_history:
@@ -155,16 +156,20 @@ with tab4:
             else:
                 st.warning("No more undos available")
     
+    # Update button
     with col2:
         if st.button("🔄 Update", key="update_revenue"):
             df = st.session_state.revenue_df.copy()
             df['Difference'] = df['Earnings'] - df['Goal']
             df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+            # Keep history manageable
+            if len(st.session_state.revenue_history) > 10:
+                st.session_state.revenue_history.pop(0)
             st.session_state.revenue_df = df
             st.rerun()
     
-    # Data editor for revenue
+    # Data editor for revenue (NO on_change callback to avoid context issues)
     edited_revenue = st.data_editor(
         st.session_state.revenue_df,
         num_rows="dynamic",
@@ -209,12 +214,19 @@ with tab4:
     if 'last_revenue_state' not in st.session_state:
         st.session_state.last_revenue_state = edited_revenue.to_dict()
     else:
+        # Check if data has changed
         if edited_revenue.to_dict() != st.session_state.last_revenue_state:
+            # Recalculate Difference and Status
             edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
             edited_revenue['Status'] = edited_revenue['Difference'].apply(
                 lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
             )
+            # Save to history
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+            # Keep history manageable
+            if len(st.session_state.revenue_history) > 10:
+                st.session_state.revenue_history.pop(0)
+            # Update session state
             st.session_state.revenue_df = edited_revenue
             st.session_state.last_revenue_state = edited_revenue.to_dict()
     
@@ -248,6 +260,27 @@ with tab4:
     col1.metric("Days Above Goal", f"{days_above}")
     col2.metric("Days Below Goal", f"{days_below}")
     col3.metric("Success Rate", f"{success_rate:.1f}%")
+    
+    # Weekly breakdown
+    if len(edited_revenue) >= 7:
+        with st.expander("📋 Weekly Breakdown"):
+            num_weeks = (len(edited_revenue) + 6) // 7
+            for week_num in range(num_weeks):
+                start_idx = week_num * 7
+                end_idx = min((week_num + 1) * 7, len(edited_revenue))
+                week_data = edited_revenue.iloc[start_idx:end_idx]
+                
+                st.write(f"**Week {week_num + 1}**")
+                w1, w2, w3, w4 = st.columns(4)
+                w1.metric("Hours", f"{week_data['Hours'].sum():.2f}")
+                w2.metric("Earnings", f"${week_data['Earnings'].sum():,.2f}")
+                w3.metric("Goal", f"${week_data['Goal'].sum():,.2f}")
+                
+                week_diff = week_data['Earnings'].sum() - week_data['Goal'].sum()
+                if week_diff >= 0:
+                    w4.metric("Net", f"+${week_diff:,.2f}", delta=f"+${week_diff:,.2f}")
+                else:
+                    w4.metric("Net", f"-${abs(week_diff):,.2f}", delta=f"-${abs(week_diff):,.2f}", delta_color="inverse")
     
     # Add Week button
     if st.button("📅 Add Week", key="add_week"):
