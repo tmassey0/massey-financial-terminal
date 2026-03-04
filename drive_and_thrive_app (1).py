@@ -20,7 +20,8 @@ def init_session_state():
     
     # Bills data - ALL 13 BILLS from the spreadsheet
     if 'bills_df' not in st.session_state:
-        st.session_state.bills_df = pd.DataFrame({
+        # Create the bills dataframe with all 13 bills
+        bills_data = {
             'Bill Name': [
                 'Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 
                 'Intuit', 'Cell Phone', 'Car Payment', 'Car Insurance',
@@ -41,7 +42,8 @@ def init_session_state():
             'Late Fee': [40, 25, 25, 20, 0, 25, 39, 25, 0, 0, 25, 0, 25],
             'Grace Days': [5, 5, 5, 5, 0, 0, 10, 10, 0, 0, 0, 0, 30],
             'Active': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']
-        })
+        }
+        st.session_state.bills_df = pd.DataFrame(bills_data)
     
     # Revenue data
     if 'revenue_df' not in st.session_state:
@@ -102,7 +104,7 @@ with tab1:
     col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
     col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
     
-    # Bills Section - Now with all bills
+    # Bills Section
     st.subheader("📋 Bills")
     col1, col2, col3 = st.columns(3)
     
@@ -115,11 +117,18 @@ with tab1:
     col2.metric("Active Bills", f"{num_active_bills}")
     col3.metric("Avg Bill Amount", f"${total_bills/num_active_bills:,.2f}" if num_active_bills > 0 else "$0")
     
+    # Show all bills in an expander
+    with st.expander("📋 All Bills List"):
+        display_bills = active_bills_df[['Bill Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
+        display_bills['Amount'] = display_bills['Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(display_bills, use_container_width=True, hide_index=True)
+    
     # Category breakdown
-    with st.expander("View by Category"):
+    with st.expander("📊 Category Breakdown"):
         category_totals = active_bills_df.groupby('Category')['Amount'].sum().reset_index()
         category_totals.columns = ['Category', 'Total']
         category_totals = category_totals.sort_values('Total', ascending=False)
+        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
         st.dataframe(category_totals, use_container_width=True, hide_index=True)
     
     # Cash Flow
@@ -160,7 +169,12 @@ with tab2:
 # --- BILLS TAB ---
 with tab3:
     st.header("Bill Management")
-    st.info("All 13 monthly bills from your spreadsheet")
+    st.info("📋 All 13 monthly bills from your spreadsheet - Edit as needed")
+    
+    # Show bill count
+    total_bills = len(st.session_state.bills_df)
+    active_bills = len(st.session_state.bills_df[st.session_state.bills_df['Active'] == 'Yes'])
+    st.write(f"**Total Bills:** {total_bills} | **Active Bills:** {active_bills}")
     
     # Data editor for bills - Now showing all columns
     edited_bills = st.data_editor(
@@ -182,13 +196,46 @@ with tab3:
     st.session_state.bills_df = edited_bills
     
     # Summary statistics for bills
-    col1, col2, col3 = st.columns(3)
+    st.markdown("---")
+    st.subheader("📊 Bill Summary")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
     active_bills = edited_bills[edited_bills['Active'] == 'Yes']
+    inactive_bills = edited_bills[edited_bills['Active'] == 'No']
+    
     total_active = active_bills['Amount'].sum()
+    total_inactive = inactive_bills['Amount'].sum()
     
     col1.metric("Total Active Bills", f"${total_active:,.2f}")
-    col2.metric("Number of Active Bills", f"{len(active_bills)}")
-    col3.metric("Total Late Fee Exposure", f"${active_bills['Late Fee'].sum():,.2f}")
+    col2.metric("Total Inactive Bills", f"${total_inactive:,.2f}")
+    col3.metric("Number Active", f"{len(active_bills)}")
+    col4.metric("Number Inactive", f"{len(inactive_bills)}")
+    
+    # Late fee exposure
+    st.subheader("⚠️ Late Fee Exposure")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Late Fee Risk", f"${active_bills['Late Fee'].sum():,.2f}")
+    col2.metric("Bills with Late Fees", f"{len(active_bills[active_bills['Late Fee'] > 0])}")
+    col3.metric("Avg Late Fee", f"${active_bills[active_bills['Late Fee'] > 0]['Late Fee'].mean():,.2f}" if len(active_bills[active_bills['Late Fee'] > 0]) > 0 else "$0")
+    
+    # Bills by category
+    with st.expander("📊 Bills by Category"):
+        category_summary = active_bills.groupby('Category').agg({
+            'Amount': ['sum', 'count']
+        }).round(2)
+        category_summary.columns = ['Total Amount', 'Number of Bills']
+        category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(category_summary, use_container_width=True)
+    
+    # Bills by card
+    with st.expander("💳 Bills by Card"):
+        card_summary = active_bills.groupby('Pay Via').agg({
+            'Amount': ['sum', 'count']
+        }).round(2)
+        card_summary.columns = ['Total Amount', 'Number of Bills']
+        card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(card_summary, use_container_width=True)
     
     if st.button("Save Bills", key="save_bills"):
         st.success("Bills saved successfully!")
