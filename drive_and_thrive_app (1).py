@@ -158,8 +158,8 @@ init_session_state()
 # App title
 st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs - changed from "PAYMENT CALENDAR" to "CALENDAR"
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "📅 CALENDAR", "💰 REVENUE"])
+# Create tabs in the requested order: Dashboard, Cards, Accounts, Revenue, Calendar
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "💰 REVENUE", "📅 CALENDAR"])
 
 # --- DASHBOARD TAB ---
 with tab1:
@@ -399,142 +399,8 @@ with tab3:
     else:
         st.warning("No account data available")
 
-# --- CALENDAR TAB (formerly PAYMENT CALENDAR) ---
-with tab4:
-    st.header("📅 Editable Calendar")
-    
-    # Month and year selector
-    col1, col2, col3 = st.columns([1, 1, 2])
-    current_date = datetime.datetime.now()
-    
-    with col1:
-        selected_month = st.selectbox(
-            "Month",
-            range(1, 13),
-            index=current_date.month - 1,
-            format_func=lambda x: calendar.month_name[x]
-        )
-    
-    with col2:
-        selected_year = st.number_input("Year", min_value=2024, max_value=2030, value=current_date.year)
-    
-    # Update calendar when month/year changes
-    if st.button("📅 Load Month", key="load_month"):
-        st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
-        st.rerun()
-    
-    # Notification Settings
-    with st.expander("🔔 Notification Settings"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.notification_settings['email_notifications'] = st.checkbox(
-                "Enable Email Notifications",
-                value=st.session_state.notification_settings['email_notifications']
-            )
-            if st.session_state.notification_settings['email_notifications']:
-                st.session_state.notification_settings['notification_email'] = st.text_input(
-                    "Email Address",
-                    value=st.session_state.notification_settings['notification_email']
-                )
-        
-        with col2:
-            st.session_state.notification_settings['sms_notifications'] = st.checkbox(
-                "Enable SMS Notifications",
-                value=st.session_state.notification_settings['sms_notifications']
-            )
-            if st.session_state.notification_settings['sms_notifications']:
-                st.session_state.notification_settings['notification_phone'] = st.text_input(
-                    "Phone Number",
-                    value=st.session_state.notification_settings['notification_phone']
-                )
-        
-        st.session_state.notification_settings['days_before_due'] = st.slider(
-            "Days Before Due to Notify",
-            min_value=1,
-            max_value=14,
-            value=st.session_state.notification_settings['days_before_due']
-        )
-        
-        if st.button("Save Notification Settings"):
-            st.success("Notification settings saved!")
-            # Recreate calendar to update notification dates
-            st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
-            st.rerun()
-    
-    # Display calendar
-    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
-        st.subheader(f"Schedule - {calendar.month_name[selected_month]} {selected_year}")
-        
-        edited_calendar = st.data_editor(
-            st.session_state.calendar_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="calendar_editor",
-            column_config={
-                "Account": st.column_config.TextColumn("Account", disabled=True),
-                "Amount": st.column_config.NumberColumn("Amount", format="$%.2f", disabled=True),
-                "Due Date": st.column_config.DateColumn("Due Date", disabled=True),
-                "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
-                "Category": st.column_config.TextColumn("Category", width="small", disabled=True),
-                "Late Fee": st.column_config.NumberColumn("Late Fee", format="$%.2f", disabled=True),
-                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
-                "Notification": st.column_config.SelectboxColumn("Notify", options=['Yes', 'No']),
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=['Upcoming', 'Paid', 'Skipped', 'Pending']
-                ),
-                "Payment Date": st.column_config.DateColumn("Payment Date"),
-                "Notes": st.column_config.TextColumn("Notes"),
-                "Notify By": st.column_config.DateColumn("Notify By", disabled=True)
-            },
-            hide_index=True
-        )
-        
-        # Update calendar when edited
-        if not edited_calendar.equals(st.session_state.calendar_df):
-            st.session_state.calendar_df = edited_calendar
-            st.rerun()
-        
-        # Summary stats
-        st.markdown("---")
-        st.subheader("📊 Summary")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        total_due = edited_calendar[edited_calendar['Status'] == 'Upcoming']['Amount'].sum()
-        total_paid = edited_calendar[edited_calendar['Status'] == 'Paid']['Amount'].sum()
-        upcoming_count = len(edited_calendar[edited_calendar['Status'] == 'Upcoming'])
-        paid_count = len(edited_calendar[edited_calendar['Status'] == 'Paid'])
-        
-        col1.metric("Total Due", f"${total_due:,.2f}")
-        col2.metric("Total Paid", f"${total_paid:,.2f}")
-        col3.metric("Upcoming", f"{upcoming_count}")
-        col4.metric("Completed", f"{paid_count}")
-        
-        # Upcoming notifications
-        st.subheader("🔔 Upcoming Notifications")
-        today = datetime.date.today()
-        upcoming_notifications = edited_calendar[
-            (edited_calendar['Notification'] == 'Yes') &
-            (edited_calendar['Notify By'] <= today) &
-            (edited_calendar['Status'] == 'Upcoming')
-        ]
-        
-        if not upcoming_notifications.empty:
-            for _, notification in upcoming_notifications.iterrows():
-                days_until = (notification['Due Date'] - today).days
-                st.warning(
-                    f"**{notification['Account']}** - "
-                    f"${notification['Amount']:,.2f} due in {days_until} days "
-                    f"({notification['Due Date'].strftime('%m/%d')})"
-                )
-        else:
-            st.info("No upcoming notifications")
-    else:
-        st.info("No active accounts to display in calendar")
-
 # --- REVENUE TAB ---
-with tab5:
+with tab4:
     st.header("💰 Revenue Tracker")
     
     # Action buttons in columns
@@ -672,3 +538,137 @@ with tab5:
             st.rerun()
     else:
         st.warning("No revenue data available")
+
+# --- CALENDAR TAB ---
+with tab5:
+    st.header("📅 Editable Calendar")
+    
+    # Month and year selector
+    col1, col2, col3 = st.columns([1, 1, 2])
+    current_date = datetime.datetime.now()
+    
+    with col1:
+        selected_month = st.selectbox(
+            "Month",
+            range(1, 13),
+            index=current_date.month - 1,
+            format_func=lambda x: calendar.month_name[x]
+        )
+    
+    with col2:
+        selected_year = st.number_input("Year", min_value=2024, max_value=2030, value=current_date.year)
+    
+    # Update calendar when month/year changes
+    if st.button("📅 Load Month", key="load_month"):
+        st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
+        st.rerun()
+    
+    # Notification Settings
+    with st.expander("🔔 Notification Settings"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.session_state.notification_settings['email_notifications'] = st.checkbox(
+                "Enable Email Notifications",
+                value=st.session_state.notification_settings['email_notifications']
+            )
+            if st.session_state.notification_settings['email_notifications']:
+                st.session_state.notification_settings['notification_email'] = st.text_input(
+                    "Email Address",
+                    value=st.session_state.notification_settings['notification_email']
+                )
+        
+        with col2:
+            st.session_state.notification_settings['sms_notifications'] = st.checkbox(
+                "Enable SMS Notifications",
+                value=st.session_state.notification_settings['sms_notifications']
+            )
+            if st.session_state.notification_settings['sms_notifications']:
+                st.session_state.notification_settings['notification_phone'] = st.text_input(
+                    "Phone Number",
+                    value=st.session_state.notification_settings['notification_phone']
+                )
+        
+        st.session_state.notification_settings['days_before_due'] = st.slider(
+            "Days Before Due to Notify",
+            min_value=1,
+            max_value=14,
+            value=st.session_state.notification_settings['days_before_due']
+        )
+        
+        if st.button("Save Notification Settings"):
+            st.success("Notification settings saved!")
+            # Recreate calendar to update notification dates
+            st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
+            st.rerun()
+    
+    # Display calendar
+    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
+        st.subheader(f"Schedule - {calendar.month_name[selected_month]} {selected_year}")
+        
+        edited_calendar = st.data_editor(
+            st.session_state.calendar_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="calendar_editor",
+            column_config={
+                "Account": st.column_config.TextColumn("Account", disabled=True),
+                "Amount": st.column_config.NumberColumn("Amount", format="$%.2f", disabled=True),
+                "Due Date": st.column_config.DateColumn("Due Date", disabled=True),
+                "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
+                "Category": st.column_config.TextColumn("Category", width="small", disabled=True),
+                "Late Fee": st.column_config.NumberColumn("Late Fee", format="$%.2f", disabled=True),
+                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
+                "Notification": st.column_config.SelectboxColumn("Notify", options=['Yes', 'No']),
+                "Status": st.column_config.SelectboxColumn(
+                    "Status",
+                    options=['Upcoming', 'Paid', 'Skipped', 'Pending']
+                ),
+                "Payment Date": st.column_config.DateColumn("Payment Date"),
+                "Notes": st.column_config.TextColumn("Notes"),
+                "Notify By": st.column_config.DateColumn("Notify By", disabled=True)
+            },
+            hide_index=True
+        )
+        
+        # Update calendar when edited
+        if not edited_calendar.equals(st.session_state.calendar_df):
+            st.session_state.calendar_df = edited_calendar
+            st.rerun()
+        
+        # Summary stats
+        st.markdown("---")
+        st.subheader("📊 Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_due = edited_calendar[edited_calendar['Status'] == 'Upcoming']['Amount'].sum()
+        total_paid = edited_calendar[edited_calendar['Status'] == 'Paid']['Amount'].sum()
+        upcoming_count = len(edited_calendar[edited_calendar['Status'] == 'Upcoming'])
+        paid_count = len(edited_calendar[edited_calendar['Status'] == 'Paid'])
+        
+        col1.metric("Total Due", f"${total_due:,.2f}")
+        col2.metric("Total Paid", f"${total_paid:,.2f}")
+        col3.metric("Upcoming", f"{upcoming_count}")
+        col4.metric("Completed", f"{paid_count}")
+        
+        # Upcoming notifications
+        st.subheader("🔔 Upcoming Notifications")
+        today = datetime.date.today()
+        upcoming_notifications = edited_calendar[
+            (edited_calendar['Notification'] == 'Yes') &
+            (edited_calendar['Notify By'] <= today) &
+            (edited_calendar['Status'] == 'Upcoming')
+        ]
+        
+        if not upcoming_notifications.empty:
+            for _, notification in upcoming_notifications.iterrows():
+                days_until = (notification['Due Date'] - today).days
+                st.warning(
+                    f"**{notification['Account']}** - "
+                    f"${notification['Amount']:,.2f} due in {days_until} days "
+                    f"({notification['Due Date'].strftime('%m/%d')})"
+                )
+        else:
+            st.info("No upcoming notifications")
+    else:
+        st.info("No active accounts to display in calendar")
