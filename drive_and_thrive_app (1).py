@@ -1,543 +1,378 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime
-import calendar
+import datetime
 
-# Page config
-st.set_page_config(
-    page_title="Strategic Financial Terminal",
-    page_icon="🎯",
-    layout="wide"
-)
+# This must be the first Streamlit command
+st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
-# Initialize session state
-if 'initialized' not in st.session_state:
-    st.session_state.initialized = True
-    
-    # Sample bills data
-    st.session_state.bills = [
-        {"date": "2024-01-01", "description": "Truck Payment", "amount": 850.00, "category": "Loan", "paid": False},
-        {"date": "2024-01-05", "description": "Fuel Card", "amount": 1250.00, "category": "Fuel", "paid": False},
-        {"date": "2024-01-10", "description": "Insurance", "amount": 450.00, "category": "Insurance", "paid": True},
-        {"date": "2024-01-15", "description": "Truck Repair", "amount": 675.00, "category": "Maintenance", "paid": False},
-    ]
-    
-    # Sample revenue data
-    st.session_state.revenue = [
-        {"date": "2024-01-01", "description": "Load #1234", "amount": 2450.00, "customer": "ABC Logistics"},
-        {"date": "2024-01-02", "description": "Load #1235", "amount": 1875.00, "customer": "XYZ Shipping"},
-        {"date": "2024-01-03", "description": "Load #1236", "amount": 3120.00, "customer": "123 Transport"},
-    ]
+# Initialize all session state variables at the very beginning
+def init_session_state():
+    """Initialize all session state variables"""
     
     # Cards data
-    st.session_state.cards = [
-        {"card_type": "Fuel", "card_number": "**** 1234", "balance": 450.00, "limit": 2000.00, "due_date": "2024-01-15"},
-        {"card_type": "Fuel", "card_number": "**** 5678", "balance": 780.00, "limit": 2000.00, "due_date": "2024-01-20"},
-        {"card_type": "Fleet", "card_number": "**** 9012", "balance": 1250.00, "limit": 5000.00, "due_date": "2024-01-10"},
-        {"card_type": "Fuel", "card_number": "**** 3456", "balance": 320.00, "limit": 2000.00, "due_date": "2024-01-25"},
-    ]
+    if 'cards_df' not in st.session_state:
+        st.session_state.cards_df = pd.DataFrame({
+            'Card': ['Card1', 'Card2', 'Card3', 'Card4', 'Card5'],
+            'Bank': ['Navy Federal', 'Indigo 3069', 'Indigo 1448', 'Milestone 5093', 'Destiny 3992'],
+            'Limit': [1500, 500, 1000, 500, 1000],
+            'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
+        })
     
-    # Calendar events (NEW)
-    st.session_state.calendar_events = [
-        {"date": "2024-01-10", "event": "Oil Change - Pete 579", "type": "Maintenance"},
-        {"date": "2024-01-15", "event": "DOT Inspection Due", "type": "Compliance"},
-        {"date": "2024-01-08", "event": "Load Pickup - Chicago", "type": "Dispatch"},
-        {"date": "2024-01-20", "event": "Fuel Card Statement", "type": "Financial"},
-    ]
+    # Bills data - ALL 13 BILLS from the spreadsheet
+    if 'bills_df' not in st.session_state:
+        # Create the bills dataframe with all 13 bills
+        bills_data = {
+            'Bill Name': [
+                'Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 
+                'Intuit', 'Cell Phone', 'Car Payment', 'Car Insurance',
+                'Gas/Fuel', 'Groceries', 'Klarna', 'Affirm', 'NTTA'
+            ],
+            'Amount': [478, 109, 180, 98, 75, 80, 785, 0, 200, 400, 45, 30, 600],
+            'Due Day': [1, 1, 1, 1, 20, 5, 24, 10, 15, 1, 15, 20, 15],
+            'Pay Via': [
+                'Card1', 'Card1', 'Card2', 'Card2', 
+                'Card2', 'Card3', 'Card3', 'Card1',
+                'Card4', 'Card3', 'Card2', 'Card5', 'Card5'
+            ],
+            'Category': [
+                'Housing', 'Housing', 'Housing', 'Housing',
+                'Utilities', 'Phone', 'Auto', 'Auto',
+                'Auto', 'Health', 'Entertainment', 'Food', 'Auto'
+            ],
+            'Late Fee': [40, 25, 25, 20, 0, 25, 39, 25, 0, 0, 25, 0, 25],
+            'Grace Days': [5, 5, 5, 5, 0, 0, 10, 10, 0, 0, 0, 0, 30],
+            'Active': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']
+        }
+        st.session_state.bills_df = pd.DataFrame(bills_data)
+    
+    # Revenue data
+    if 'revenue_df' not in st.session_state:
+        data = {
+            'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+            'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
+            'Hours': [8.53, 0, 0, 0, 0, 0, 0],
+            'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
+            'Goal': [150, 150, 150, 150, 150, 150, 150]
+        }
+        df = pd.DataFrame(data)
+        df['Difference'] = df['Earnings'] - df['Goal']
+        df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+        st.session_state.revenue_df = df
+    
+    # Revenue history for undo
+    if 'revenue_history' not in st.session_state:
+        st.session_state.revenue_history = []
 
-# Custom CSS
-st.markdown("""
-<style>
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .dashboard-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
-    }
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    }
-    .card-item {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 0.5rem;
-        border-left: 4px solid #ff6b35;
-    }
-    .calendar-day {
-        background: white;
-        padding: 10px;
-        border-radius: 8px;
-        min-height: 100px;
-        border: 1px solid #e0e0e0;
-    }
-    .calendar-event {
-        background: #ff6b35;
-        color: white;
-        padding: 2px 5px;
-        border-radius: 3px;
-        font-size: 0.7rem;
-        margin-bottom: 2px;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Call initialization
+init_session_state()
 
-# Header - ORIGINAL TITLE
-st.markdown("<h1 style='color: white;'>🎯 Strategic Financial Terminal</h1>", unsafe_allow_html=True)
+# App title
+st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs - ORIGINAL ORDER with Calendar added at the end
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "💳 Cards", "💰 Bills", "📈 Revenue", "📅 Calendar"])
+# Create tabs
+tab1, tab2, tab3, tab4 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📅 BILLS", "💰 REVENUE"])
 
-# ============================================================================
-# TAB 1: DASHBOARD (ORIGINAL)
-# ============================================================================
+# --- DASHBOARD TAB ---
 with tab1:
-    # Key Metrics Row
+    st.header("Financial Dashboard")
+    
+    # Overview Section
+    st.subheader("📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
     
-    # Calculate metrics
-    total_due = sum(item["amount"] for item in st.session_state.bills if not item["paid"])
-    total_revenue = sum(item["amount"] for item in st.session_state.revenue)
-    total_card_balance = sum(item["balance"] for item in st.session_state.cards)
-    cash_flow = total_revenue - total_due - total_card_balance
-    
-    with col1:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Total Bills Due", f"${total_due:,.2f}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Card Balances", f"${total_card_balance:,.2f}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Monthly Revenue", f"${total_revenue:,.2f}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    with col4:
-        st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
-        st.metric("Cash Flow", f"${cash_flow:,.2f}")
-        st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Recent Activity Section
-    st.markdown("---")
-    st.markdown("### Recent Activity")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### Recent Bills")
-        df_bills = pd.DataFrame(st.session_state.bills)
-        if not df_bills.empty:
-            df_bills = df_bills.sort_values('date', ascending=False).head(3)
-            for _, row in df_bills.iterrows():
-                status = "✅" if row['paid'] else "⏳"
-                st.markdown(f"{status} **{row['description']}** - ${row['amount']:,.2f} ({row['date']})")
-    
-    with col2:
-        st.markdown("#### Recent Revenue")
-        df_revenue = pd.DataFrame(st.session_state.revenue)
-        if not df_revenue.empty:
-            df_revenue = df_revenue.sort_values('date', ascending=False).head(3)
-            for _, row in df_revenue.iterrows():
-                st.markdown(f"💰 **{row['description']}** - ${row['amount']:,.2f} ({row['customer']})")
-    
-    # Charts Row
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Bills by Category Pie Chart
-        if df_bills is not None and not df_bills.empty:
-            category_sum = df_bills.groupby('category')['amount'].sum().reset_index()
-            fig = go.Figure(data=[go.Pie(
-                labels=category_sum['category'],
-                values=category_sum['amount'],
-                hole=0.3,
-                marker_colors=['#ff6b35', '#ff8c5a', '#ffad7a', '#ffce9a']
-            )])
-            fig.update_layout(title='Bills by Category', height=350, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Revenue Bar Chart
-        if df_revenue is not None and not df_revenue.empty:
-            fig = go.Figure(data=[go.Bar(
-                x=df_revenue['description'],
-                y=df_revenue['amount'],
-                marker_color='#2ecc71'
-            )])
-            fig.update_layout(title='Revenue by Load', height=350, xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================================
-# TAB 2: CARDS (ORIGINAL)
-# ============================================================================
-with tab2:
-    st.markdown("## 💳 Cards")
-    
-    # Card Statistics
-    total_balance = sum(card["balance"] for card in st.session_state.cards)
-    total_limit = sum(card["limit"] for card in st.session_state.cards)
+    total_limit = st.session_state.cards_df['Limit'].sum()
+    total_balance = st.session_state.cards_df['Balance'].sum()
+    available = total_limit - total_balance
     utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
     
+    col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
+    col2.metric("Total Balance", f"${total_balance:,.2f}")
+    col3.metric("Available Credit", f"${available:,.2f}")
+    col4.metric("Utilization", f"{utilization:.1f}%")
+    
+    # Revenue Section
+    st.subheader("🚖 Revenue")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_hours = st.session_state.revenue_df['Hours'].sum()
+    total_earnings = st.session_state.revenue_df['Earnings'].sum()
+    total_goal = st.session_state.revenue_df['Goal'].sum()
+    avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
+    
+    col1.metric("Total Hours", f"{total_hours:.2f}")
+    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+    col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
+    col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
+    
+    # Bills Section
+    st.subheader("📋 Bills")
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Balance", f"${total_balance:,.2f}")
-    col2.metric("Total Limit", f"${total_limit:,.2f}")
-    col3.metric("Utilization", f"{utilization:.1f}%")
     
-    st.markdown("---")
+    # Calculate total active bills
+    active_bills_df = st.session_state.bills_df[st.session_state.bills_df['Active'] == 'Yes']
+    total_bills = active_bills_df['Amount'].sum()
+    num_active_bills = len(active_bills_df)
     
-    # Add Card Form
-    with st.expander("➕ Add New Card"):
-        with st.form("add_card"):
-            col1, col2 = st.columns(2)
-            with col1:
-                card_type = st.selectbox("Card Type", ["Fuel", "Fleet", "Corporate", "Other"])
-                card_number = st.text_input("Card Number (last 4 digits)", max_chars=4)
-            with col2:
-                balance = st.number_input("Current Balance", min_value=0.0, step=10.0)
-                limit = st.number_input("Credit Limit", min_value=0.0, step=100.0)
-            due_date = st.date_input("Due Date", value=datetime.now())
-            
-            if st.form_submit_button("Add Card"):
-                st.session_state.cards.append({
-                    "card_type": card_type,
-                    "card_number": f"**** {card_number}" if card_number else "**** ****",
-                    "balance": balance,
-                    "limit": limit,
-                    "due_date": due_date.strftime('%Y-%m-%d')
-                })
-                st.success("Card added!")
-                st.rerun()
+    col1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
+    col2.metric("Active Bills", f"{num_active_bills}")
+    col3.metric("Avg Bill Amount", f"${total_bills/num_active_bills:,.2f}" if num_active_bills > 0 else "$0")
     
-    # Display Cards
-    for idx, card in enumerate(st.session_state.cards):
-        with st.container():
-            st.markdown(f"""
-            <div class='card-item'>
-                <div style='display: flex; justify-content: space-between;'>
-                    <span><strong>{card['card_type']} Card</strong> {card['card_number']}</span>
-                    <span style='color: #ff6b35;'><strong>${card['balance']:,.2f}</strong></span>
-                </div>
-                <div style='display: flex; justify-content: space-between; font-size: 0.9rem; color: #666;'>
-                    <span>Limit: ${card['limit']:,.2f}</span>
-                    <span>Due: {card['due_date']}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            col1, col2 = st.columns([0.9, 0.1])
-            with col2:
-                if st.button("🗑️", key=f"del_card_{idx}"):
-                    st.session_state.cards.pop(idx)
-                    st.rerun()
+    # Show all bills in an expander
+    with st.expander("📋 All Bills List"):
+        display_bills = active_bills_df[['Bill Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
+        display_bills['Amount'] = display_bills['Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(display_bills, use_container_width=True, hide_index=True)
+    
+    # Category breakdown
+    with st.expander("📊 Category Breakdown"):
+        category_totals = active_bills_df.groupby('Category')['Amount'].sum().reset_index()
+        category_totals.columns = ['Category', 'Total']
+        category_totals = category_totals.sort_values('Total', ascending=False)
+        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(category_totals, use_container_width=True, hide_index=True)
+    
+    # Cash Flow
+    st.subheader("💰 Cash Flow")
+    col1, col2, col3 = st.columns(3)
+    
+    net_cash = total_earnings - total_bills
+    col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
+    col2.metric("Monthly Bills", f"${total_bills:,.2f}")
+    
+    if net_cash >= 0:
+        col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
+    else:
+        col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
 
-# ============================================================================
-# TAB 3: BILLS (ORIGINAL)
-# ============================================================================
+# --- CARDS TAB ---
+with tab2:
+    st.header("Credit Card Management")
+    
+    # Data editor for cards
+    edited_cards = st.data_editor(
+        st.session_state.cards_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="cards_editor",
+        column_config={
+            "Card": st.column_config.TextColumn("Card", width="small"),
+            "Bank": st.column_config.TextColumn("Bank", width="medium"),
+            "Limit": st.column_config.NumberColumn("Credit Limit", format="$%.2f"),
+            "Balance": st.column_config.NumberColumn("Current Balance", format="$%.2f")
+        }
+    )
+    st.session_state.cards_df = edited_cards
+    
+    if st.button("Save Cards", key="save_cards"):
+        st.success("Cards saved successfully!")
+
+# --- BILLS TAB ---
 with tab3:
-    st.markdown("## 💰 Bills")
+    st.header("Bill Management")
+    st.info("📋 All 13 monthly bills from your spreadsheet - Edit as needed")
     
-    # Add Bill Section
-    with st.expander("➕ Add New Bill"):
-        with st.form("add_bill"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                bill_date = st.date_input("Due Date", value=datetime.now())
-                bill_desc = st.text_input("Description")
-            
-            with col2:
-                bill_amount = st.number_input("Amount", min_value=0.0, step=10.0)
-                bill_category = st.selectbox("Category", ["Loan", "Fuel", "Insurance", "Maintenance", "Other"])
-            
-            if st.form_submit_button("Add Bill"):
-                st.session_state.bills.append({
-                    "date": bill_date.strftime('%Y-%m-%d'),
-                    "description": bill_desc,
-                    "amount": bill_amount,
-                    "category": bill_category,
-                    "paid": False
-                })
-                st.success("Bill added!")
-                st.rerun()
+    # Show bill count
+    total_bills = len(st.session_state.bills_df)
+    active_bills_count = len(st.session_state.bills_df[st.session_state.bills_df['Active'] == 'Yes'])
+    st.write(f"**Total Bills:** {total_bills} | **Active Bills:** {active_bills_count}")
     
-    # Bills Table
-    if st.session_state.bills:
-        df_bills = pd.DataFrame(st.session_state.bills)
-        df_bills['date'] = pd.to_datetime(df_bills['date'])
-        df_bills = df_bills.sort_values('date')
-        
-        # Filters
-        col1, col2 = st.columns(2)
-        with col1:
-            filter_paid = st.checkbox("Show paid bills", value=True)
-        
-        # Display bills
-        for idx, bill in enumerate(st.session_state.bills):
-            if filter_paid or not bill['paid']:
-                col_a, col_b, col_c, col_d, col_e = st.columns([2, 1, 1.5, 0.8, 0.5])
-                
-                with col_a:
-                    st.markdown(f"**{bill['description']}**")
-                    st.caption(bill['category'])
-                
-                with col_b:
-                    st.markdown(f"**${bill['amount']:,.2f}**")
-                
-                with col_c:
-                    st.markdown(f"Due: {bill['date']}")
-                
-                with col_d:
-                    paid = st.checkbox("Paid", value=bill['paid'], key=f"paid_{idx}")
-                    if paid != bill['paid']:
-                        bill['paid'] = paid
-                        st.rerun()
-                
-                with col_e:
-                    if st.button("🗑️", key=f"del_bill_{idx}"):
-                        st.session_state.bills.pop(idx)
-                        st.rerun()
-    else:
-        st.info("No bills yet. Add your first bill above.")
-
-# ============================================================================
-# TAB 4: REVENUE (ORIGINAL)
-# ============================================================================
-with tab4:
-    st.markdown("## 📈 Revenue")
+    # Data editor for bills - Now showing all columns
+    edited_bills = st.data_editor(
+        st.session_state.bills_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="bills_editor",
+        column_config={
+            "Bill Name": st.column_config.TextColumn("Bill Name", width="medium"),
+            "Amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
+            "Due Day": st.column_config.NumberColumn("Due Day", min_value=1, max_value=31, step=1),
+            "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
+            "Category": st.column_config.TextColumn("Category", width="small"),
+            "Late Fee": st.column_config.NumberColumn("Late Fee ($)", format="$%.2f"),
+            "Grace Days": st.column_config.NumberColumn("Grace Days", min_value=0),
+            "Active": st.column_config.SelectboxColumn("Active", options=['Yes', 'No'])
+        }
+    )
+    st.session_state.bills_df = edited_bills
     
-    # Add Revenue Section
-    with st.expander("➕ Add Revenue"):
-        with st.form("add_revenue"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                rev_date = st.date_input("Date", value=datetime.now())
-                rev_desc = st.text_input("Description")
-            
-            with col2:
-                rev_amount = st.number_input("Amount", min_value=0.0, step=10.0)
-                rev_customer = st.text_input("Customer")
-            
-            if st.form_submit_button("Add Revenue"):
-                st.session_state.revenue.append({
-                    "date": rev_date.strftime('%Y-%m-%d'),
-                    "description": rev_desc,
-                    "amount": rev_amount,
-                    "customer": rev_customer
-                })
-                st.success("Revenue added!")
-                st.rerun()
-    
-    # Revenue Table
-    if st.session_state.revenue:
-        df_revenue = pd.DataFrame(st.session_state.revenue)
-        df_revenue['date'] = pd.to_datetime(df_revenue['date'])
-        df_revenue = df_revenue.sort_values('date', ascending=False)
-        
-        # Summary metrics
-        total_rev = df_revenue['amount'].sum()
-        avg_rev = df_revenue['amount'].mean()
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Revenue", f"${total_rev:,.2f}")
-        col2.metric("Average per Load", f"${avg_rev:,.2f}")
-        col3.metric("Number of Loads", len(df_revenue))
-        
-        st.markdown("---")
-        
-        # Revenue entries
-        for idx, rev in enumerate(st.session_state.revenue):
-            col_a, col_b, col_c, col_d = st.columns([2, 1, 2, 0.5])
-            
-            with col_a:
-                st.markdown(f"**{rev['description']}**")
-            with col_b:
-                st.markdown(f"**${rev['amount']:,.2f}**")
-            with col_c:
-                st.markdown(f"{rev['date']} - {rev['customer']}")
-            with col_d:
-                if st.button("🗑️", key=f"del_rev_{idx}"):
-                    st.session_state.revenue.pop(idx)
-                    st.rerun()
-    else:
-        st.info("No revenue yet. Add your first revenue entry above.")
-
-# ============================================================================
-# TAB 5: CALENDAR (NEW - EDITABLE)
-# ============================================================================
-with tab5:
-    st.markdown("## 📅 Editable Calendar")
-    
-    # Month selector
-    col1, col2, col3 = st.columns([1, 2, 1])
-    current_month = datetime.now().month
-    
-    with col1:
-        if st.button("◀ Previous"):
-            st.session_state.cal_month = (st.session_state.get('cal_month', current_month) - 2) % 12 + 1
-            st.rerun()
-    
-    with col2:
-        selected_month = st.selectbox(
-            "Select Month",
-            options=range(1, 13),
-            format_func=lambda x: calendar.month_name[x],
-            index=st.session_state.get('cal_month', current_month) - 1
-        )
-        st.session_state.cal_month = selected_month
-    
-    with col3:
-        if st.button("Next ▶"):
-            st.session_state.cal_month = (st.session_state.get('cal_month', current_month)) % 12 + 1
-            st.rerun()
-    
-    # Calendar grid
-    year = datetime.now().year
-    month = st.session_state.get('cal_month', current_month)
-    cal = calendar.monthcalendar(year, month)
-    
-    # Day headers
-    cols = st.columns(7)
-    days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    for i, day in enumerate(days):
-        cols[i].write(f"**{day}**")
-    
-    # Calendar days
-    for week in cal:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            with cols[i]:
-                if day != 0:
-                    date_str = f"{year}-{month:02d}-{day:02d}"
-                    events = [e for e in st.session_state.calendar_events if e["date"] == date_str]
-                    
-                    # Day number
-                    st.write(f"**{day}**")
-                    
-                    # Events with edit buttons
-                    for event_idx, event in enumerate(events):
-                        col_e1, col_e2 = st.columns([4, 1])
-                        with col_e1:
-                            color = {
-                                "Maintenance": "#f39c12",
-                                "Compliance": "#3498db",
-                                "Dispatch": "#2ecc71",
-                                "Financial": "#e74c3c"
-                            }.get(event["type"], "#95a5a6")
-                            
-                            st.markdown(
-                                f"<div style='background:{color}; color:white; padding:2px 5px; "
-                                f"border-radius:3px; font-size:0.7rem; margin-bottom:2px;'>{event['event']}</div>",
-                                unsafe_allow_html=True
-                            )
-                        with col_e2:
-                            if st.button("✏️", key=f"edit_{date_str}_{event_idx}"):
-                                st.session_state.editing_event = event
-                                st.session_state.editing_date = date_str
-                                st.rerun()
-    
-    # Add/Edit Event Section
+    # Summary statistics for bills
     st.markdown("---")
+    st.subheader("📊 Bill Summary")
     
-    # Editing existing event
-    if 'editing_event' in st.session_state and st.session_state.editing_event:
-        st.markdown("### Edit Event")
-        event = st.session_state.editing_event
-        
-        with st.form("edit_event_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                edit_date = st.date_input("Date", value=datetime.strptime(event['date'], '%Y-%m-%d'))
-                edit_desc = st.text_input("Event Description", value=event['event'])
-            with col2:
-                edit_type = st.selectbox("Type", 
-                    ["Maintenance", "Compliance", "Dispatch", "Financial", "Personal"],
-                    index=["Maintenance", "Compliance", "Dispatch", "Financial", "Personal"].index(event['type'])
-                )
-            
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                if st.form_submit_button("💾 Save Changes"):
-                    # Update the event
-                    for e in st.session_state.calendar_events:
-                        if e['date'] == event['date'] and e['event'] == event['event']:
-                            e['date'] = edit_date.strftime('%Y-%m-%d')
-                            e['event'] = edit_desc
-                            e['type'] = edit_type
-                            break
-                    st.session_state.editing_event = None
-                    st.success("Event updated!")
-                    st.rerun()
-            with col_b:
-                if st.form_submit_button("🗑️ Delete"):
-                    st.session_state.calendar_events = [e for e in st.session_state.calendar_events 
-                                                       if not (e['date'] == event['date'] and e['event'] == event['event'])]
-                    st.session_state.editing_event = None
-                    st.success("Event deleted!")
-                    st.rerun()
-            with col_c:
-                if st.form_submit_button("Cancel"):
-                    st.session_state.editing_event = None
-                    st.rerun()
+    col1, col2, col3, col4 = st.columns(4)
     
-    # Add new event
+    active_bills = edited_bills[edited_bills['Active'] == 'Yes']
+    inactive_bills = edited_bills[edited_bills['Active'] == 'No']
+    
+    total_active = active_bills['Amount'].sum()
+    total_inactive = inactive_bills['Amount'].sum()
+    
+    col1.metric("Total Active Bills", f"${total_active:,.2f}")
+    col2.metric("Total Inactive Bills", f"${total_inactive:,.2f}")
+    col3.metric("Number Active", f"{len(active_bills)}")
+    col4.metric("Number Inactive", f"{len(inactive_bills)}")
+    
+    # Late fee exposure
+    st.subheader("⚠️ Late Fee Exposure")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Late Fee Risk", f"${active_bills['Late Fee'].sum():,.2f}")
+    col2.metric("Bills with Late Fees", f"{len(active_bills[active_bills['Late Fee'] > 0])}")
+    col3.metric("Avg Late Fee", f"${active_bills[active_bills['Late Fee'] > 0]['Late Fee'].mean():,.2f}" if len(active_bills[active_bills['Late Fee'] > 0]) > 0 else "$0")
+    
+    # Bills by category
+    with st.expander("📊 Bills by Category"):
+        category_summary = active_bills.groupby('Category').agg({
+            'Amount': ['sum', 'count']
+        }).round(2)
+        category_summary.columns = ['Total Amount', 'Number of Bills']
+        category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(category_summary, use_container_width=True)
+    
+    # Bills by card
+    with st.expander("💳 Bills by Card"):
+        card_summary = active_bills.groupby('Pay Via').agg({
+            'Amount': ['sum', 'count']
+        }).round(2)
+        card_summary.columns = ['Total Amount', 'Number of Bills']
+        card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+        st.dataframe(card_summary, use_container_width=True)
+    
+    if st.button("Save Bills", key="save_bills"):
+        st.success("Bills saved successfully!")
+
+# --- REVENUE TAB ---
+with tab4:
+    st.header("💰 Revenue Tracker")
+    
+    # Action buttons in columns
+    col1, col2, col3 = st.columns([1, 1, 4])
+    
+    # Undo button
+    with col1:
+        if st.button("↩️ Undo", key="undo_revenue"):
+            if st.session_state.revenue_history:
+                st.session_state.revenue_df = st.session_state.revenue_history.pop()
+                st.rerun()
+            else:
+                st.warning("No more undos available")
+    
+    # Update button
+    with col2:
+        if st.button("🔄 Update", key="update_revenue"):
+            df = st.session_state.revenue_df.copy()
+            df['Difference'] = df['Earnings'] - df['Goal']
+            df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+            if len(st.session_state.revenue_history) > 10:
+                st.session_state.revenue_history.pop(0)
+            st.session_state.revenue_df = df
+            st.rerun()
+    
+    # Data editor for revenue
+    edited_revenue = st.data_editor(
+        st.session_state.revenue_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="revenue_editor",
+        column_config={
+            "Day": st.column_config.TextColumn("Day", width="small"),
+            "Date": st.column_config.TextColumn("Date", width="small"),
+            "Hours": st.column_config.NumberColumn(
+                "Hours", 
+                min_value=0.0,
+                max_value=24.0,
+                step=0.01,
+                format="%.2f"
+            ),
+            "Earnings": st.column_config.NumberColumn(
+                "Earnings ($)", 
+                min_value=0.0,
+                step=0.01,
+                format="$%.2f"
+            ),
+            "Goal": st.column_config.NumberColumn(
+                "Goal ($)", 
+                min_value=0.0,
+                step=0.01,
+                format="$%.2f"
+            ),
+            "Difference": st.column_config.NumberColumn(
+                "Diff ($)", 
+                disabled=True, 
+                format="$%.2f"
+            ),
+            "Status": st.column_config.TextColumn(
+                "Status", 
+                disabled=True
+            )
+        },
+        hide_index=True
+    )
+    
+    # Auto-update calculations when data changes
+    if 'last_revenue_state' not in st.session_state:
+        st.session_state.last_revenue_state = edited_revenue.to_dict()
     else:
-        st.markdown("### Add New Event")
-        with st.form("add_calendar_event"):
-            col1, col2 = st.columns(2)
-            with col1:
-                event_date = st.date_input("Date", value=datetime.now())
-                event_desc = st.text_input("Event Description")
-            with col2:
-                event_type = st.selectbox("Type", ["Maintenance", "Compliance", "Dispatch", "Financial", "Personal"])
-            
-            if st.form_submit_button("Add Event"):
-                if event_desc:
-                    st.session_state.calendar_events.append({
-                        "date": event_date.strftime('%Y-%m-%d'),
-                        "event": event_desc,
-                        "type": event_type
-                    })
-                    st.success("Event added!")
-                    st.rerun()
+        if edited_revenue.to_dict() != st.session_state.last_revenue_state:
+            edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
+            edited_revenue['Status'] = edited_revenue['Difference'].apply(
+                lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
+            )
+            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+            if len(st.session_state.revenue_history) > 10:
+                st.session_state.revenue_history.pop(0)
+            st.session_state.revenue_df = edited_revenue
+            st.session_state.last_revenue_state = edited_revenue.to_dict()
     
-    # Event List
-    st.markdown("### All Events")
-    if st.session_state.calendar_events:
-        events_df = pd.DataFrame(st.session_state.calendar_events)
-        events_df = events_df.sort_values('date')
-        
-        for idx, row in events_df.iterrows():
-            col_a, col_b, col_c, col_d = st.columns([2, 1, 1, 1])
-            with col_a:
-                st.write(f"**{row['date']}** - {row['event']}")
-            with col_b:
-                st.write(f"({row['type']})")
-            with col_c:
-                if st.button("Edit", key=f"list_edit_{idx}"):
-                    # Find the event in session_state
-                    for e in st.session_state.calendar_events:
-                        if e['date'] == row['date'] and e['event'] == row['event']:
-                            st.session_state.editing_event = e
-                            st.session_state.editing_date = row['date']
-                            st.rerun()
-            with col_d:
-                if st.button("Delete", key=f"list_del_{idx}"):
-                    st.session_state.calendar_events.pop(idx)
-                    st.rerun()
+    # Summary section
+    st.markdown("---")
+    st.subheader("📊 Summary")
+    
+    total_hours = edited_revenue['Hours'].sum()
+    total_earnings = edited_revenue['Earnings'].sum()
+    total_goal = edited_revenue['Goal'].sum()
+    total_diff = total_earnings - total_goal
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Hours", f"{total_hours:.2f}")
+    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+    col3.metric("Total Goal", f"${total_goal:,.2f}")
+    
+    if total_diff >= 0:
+        col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
     else:
-        st.info("No events scheduled")
+        col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
+    
+    days_above = len(edited_revenue[edited_revenue['Earnings'] >= edited_revenue['Goal']])
+    days_below = len(edited_revenue[edited_revenue['Earnings'] < edited_revenue['Goal']])
+    success_rate = (days_above / len(edited_revenue) * 100) if len(edited_revenue) > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Days Above Goal", f"{days_above}")
+    col2.metric("Days Below Goal", f"{days_below}")
+    col3.metric("Success Rate", f"{success_rate:.1f}%")
+    
+    # Add Week button
+    if st.button("📅 Add Week", key="add_week"):
+        st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+        
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        current_date = datetime.datetime.now()
+        
+        week_rows = []
+        for i, day in enumerate(days):
+            week_date = current_date + datetime.timedelta(days=i)
+            week_rows.append({
+                'Day': day,
+                'Date': week_date.strftime("%Y-%m-%d"),
+                'Hours': 0.0,
+                'Earnings': 0.0,
+                'Goal': 175.0
+            })
+        
+        week_df = pd.DataFrame(week_rows)
+        week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
+        week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+        
+        st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
+        st.rerun()
