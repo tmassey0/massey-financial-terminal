@@ -82,6 +82,28 @@ def init_session_state():
     # Revenue history for undo
     if 'revenue_history' not in st.session_state:
         st.session_state.revenue_history = []
+    
+    # LEDGER DATA - New addition for tracking personal expenses
+    if 'ledger_df' not in st.session_state:
+        # Sample ledger data to get started
+        ledger_data = {
+            'Date': [datetime.date.today() - datetime.timedelta(days=x) for x in range(5, 0, -1)],
+            'Description': ['Gas Station', 'Walmart', 'Restaurant', 'Amazon', 'Pharmacy'],
+            'Category': ['Transportation', 'Shopping', 'Dining', 'Shopping', 'Health'],
+            'Amount': [45.67, 89.32, 32.50, 67.89, 15.43],
+            'Payment Method': ['Card1', 'Card2', 'Cash', 'Card3', 'Card4'],
+            'Notes': ['Filled up tank', 'Groceries and supplies', 'Lunch with friends', 'Household items', 'Prescription']
+        }
+        st.session_state.ledger_df = pd.DataFrame(ledger_data)
+    
+    # Ledger categories for dropdown
+    if 'ledger_categories' not in st.session_state:
+        st.session_state.ledger_categories = [
+            'Transportation', 'Shopping', 'Dining', 'Health', 'Entertainment',
+            'Utilities', 'Housing', 'Auto', 'Food', 'Personal Care',
+            'Gifts', 'Education', 'Travel', 'Insurance', 'Subscriptions',
+            'Miscellaneous'
+        ]
 
 def create_calendar_safe(month, year):
     """Create a calendar with safe error handling"""
@@ -158,8 +180,15 @@ init_session_state()
 # App title
 st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs in the requested order: Dashboard, Cards, Accounts, Revenue, Calendar
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "💰 REVENUE", "📅 CALENDAR"])
+# Create tabs in the correct order: Dashboard, Cards, Accounts, Revenue, Ledger, Calendar
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📊 DASHBOARD", 
+    "💳 CARDS", 
+    "📋 ACCOUNTS", 
+    "💰 REVENUE", 
+    "📒 LEDGER", 
+    "📅 CALENDAR"
+])
 
 # --- DASHBOARD TAB ---
 with tab1:
@@ -236,30 +265,80 @@ with tab1:
         col2.metric("Active Accounts", "0")
         col3.metric("Avg Account Amount", "$0")
     
-    # Cash Flow
-    st.subheader("💰 Cash Flow")
+    # LEDGER Section - Personal expenses summary
+    st.subheader("📒 Personal Expenses")
     col1, col2, col3 = st.columns(3)
+    
+    if 'ledger_df' in st.session_state and not st.session_state.ledger_df.empty:
+        # Current month expenses
+        current_month = datetime.datetime.now().month
+        current_year = datetime.datetime.now().year
+        month_expenses = st.session_state.ledger_df[
+            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.month == current_month) &
+            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.year == current_year)
+        ]
+        
+        total_expenses = month_expenses['Amount'].sum() if not month_expenses.empty else 0
+        transaction_count = len(month_expenses)
+        avg_transaction = total_expenses / transaction_count if transaction_count > 0 else 0
+        
+        col1.metric("MTD Expenses", f"${total_expenses:,.2f}")
+        col2.metric("# of Transactions", f"{transaction_count}")
+        col3.metric("Avg Transaction", f"${avg_transaction:,.2f}")
+        
+        # Top spending categories
+        if not month_expenses.empty:
+            with st.expander("📊 Top Spending Categories"):
+                category_summary = month_expenses.groupby('Category')['Amount'].sum().sort_values(ascending=False).reset_index()
+                category_summary.columns = ['Category', 'Amount']
+                category_summary['Amount'] = category_summary['Amount'].apply(lambda x: f"${x:,.2f}")
+                st.dataframe(category_summary, use_container_width=True, hide_index=True)
+    else:
+        col1.metric("MTD Expenses", "$0")
+        col2.metric("# of Transactions", "0")
+        col3.metric("Avg Transaction", "$0")
+    
+    # Cash Flow (updated to include personal expenses)
+    st.subheader("💰 Cash Flow Analysis")
+    col1, col2, col3, col4 = st.columns(4)
     
     revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
     accounts_exist = 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty
+    ledger_exists = 'ledger_df' in st.session_state and not st.session_state.ledger_df.empty
     
-    if revenue_exists and accounts_exist:
+    if revenue_exists:
         total_earnings = st.session_state.revenue_df['Earnings'].sum()
+    else:
+        total_earnings = 0
+    
+    if accounts_exist:
         active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
         total_accounts = active_accounts_df['Amount'].sum()
-        net_cash = total_earnings - total_accounts
-        
-        col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
-        col2.metric("Monthly Accounts", f"${total_accounts:,.2f}")
-        
-        if net_cash >= 0:
-            col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
-        else:
-            col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
     else:
-        col1.metric("Monthly Revenue", "$0")
-        col2.metric("Monthly Accounts", "$0")
-        col3.metric("Net Cash Flow", "$0")
+        total_accounts = 0
+    
+    if ledger_exists:
+        current_month = datetime.datetime.now().month
+        current_year = datetime.datetime.now().year
+        month_expenses = st.session_state.ledger_df[
+            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.month == current_month) &
+            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.year == current_year)
+        ]
+        total_expenses = month_expenses['Amount'].sum() if not month_expenses.empty else 0
+    else:
+        total_expenses = 0
+    
+    total_outflow = total_accounts + total_expenses
+    net_cash = total_earnings - total_outflow
+    
+    col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
+    col2.metric("Bills & Accounts", f"${total_accounts:,.2f}")
+    col3.metric("Personal Expenses", f"${total_expenses:,.2f}")
+    
+    if net_cash >= 0:
+        col4.metric("Net Cash Flow", f"+${net_cash:,.2f}", delta=f"+${net_cash:,.2f}")
+    else:
+        col4.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}", delta=f"-${abs(net_cash):,.2f}", delta_color="inverse")
     
     # Upcoming Payments from Calendar
     st.subheader("📅 Upcoming Payments")
@@ -539,8 +618,167 @@ with tab4:
     else:
         st.warning("No revenue data available")
 
-# --- CALENDAR TAB ---
+# --- LEDGER TAB ---
 with tab5:
+    st.header("📒 Personal Ledger")
+    st.info("Track all your incidental expenses - gas, store purchases, and everyday spending")
+    
+    # Action buttons
+    col1, col2, col3 = st.columns([1, 1, 4])
+    
+    with col1:
+        if st.button("➕ Add Transaction", key="add_transaction"):
+            # Add a new empty row
+            new_row = pd.DataFrame({
+                'Date': [datetime.date.today()],
+                'Description': ['New Transaction'],
+                'Category': ['Miscellaneous'],
+                'Amount': [0.00],
+                'Payment Method': ['Cash'],
+                'Notes': ['']
+            })
+            st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
+            st.rerun()
+    
+    with col2:
+        if st.button("🗑️ Clear All", key="clear_ledger"):
+            if st.button("⚠️ Confirm Clear?"):
+                st.session_state.ledger_df = pd.DataFrame(columns=['Date', 'Description', 'Category', 'Amount', 'Payment Method', 'Notes'])
+                st.rerun()
+    
+    # Date filter
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_option = st.selectbox(
+            "Filter by",
+            ["All Time", "This Month", "Last Month", "This Year", "Custom Range"]
+        )
+    
+    with col2:
+        if filter_option == "Custom Range":
+            start_date = st.date_input("Start Date", datetime.date.today() - datetime.timedelta(days=30))
+            end_date = st.date_input("End Date", datetime.date.today())
+    
+    # Apply filter
+    filtered_df = st.session_state.ledger_df.copy()
+    if filter_option == "This Month":
+        current_month = datetime.datetime.now().month
+        current_year = datetime.datetime.now().year
+        filtered_df = filtered_df[
+            (pd.to_datetime(filtered_df['Date']).dt.month == current_month) &
+            (pd.to_datetime(filtered_df['Date']).dt.year == current_year)
+        ]
+    elif filter_option == "Last Month":
+        last_month = datetime.datetime.now().month - 1
+        if last_month == 0:
+            last_month = 12
+        current_year = datetime.datetime.now().year
+        filtered_df = filtered_df[
+            (pd.to_datetime(filtered_df['Date']).dt.month == last_month) &
+            (pd.to_datetime(filtered_df['Date']).dt.year == current_year)
+        ]
+    elif filter_option == "This Year":
+        current_year = datetime.datetime.now().year
+        filtered_df = filtered_df[pd.to_datetime(filtered_df['Date']).dt.year == current_year]
+    elif filter_option == "Custom Range":
+        filtered_df = filtered_df[
+            (pd.to_datetime(filtered_df['Date']).dt.date >= start_date) &
+            (pd.to_datetime(filtered_df['Date']).dt.date <= end_date)
+        ]
+    
+    # Data editor for ledger
+    edited_ledger = st.data_editor(
+        filtered_df,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="ledger_editor",
+        column_config={
+            "Date": st.column_config.DateColumn(
+                "Date",
+                min_value=datetime.date(2020, 1, 1),
+                max_value=datetime.date(2030, 12, 31),
+                format="MM/DD/YYYY",
+                step=1,
+                required=True
+            ),
+            "Description": st.column_config.TextColumn(
+                "Description",
+                width="medium",
+                required=True
+            ),
+            "Category": st.column_config.SelectboxColumn(
+                "Category",
+                width="medium",
+                options=st.session_state.ledger_categories,
+                required=True
+            ),
+            "Amount": st.column_config.NumberColumn(
+                "Amount ($)",
+                min_value=0.0,
+                step=0.01,
+                format="$%.2f",
+                required=True
+            ),
+            "Payment Method": st.column_config.SelectboxColumn(
+                "Payment Method",
+                width="small",
+                options=['Cash', 'Card1', 'Card2', 'Card3', 'Card4', 'Card5', 'Debit', 'Other']
+            ),
+            "Notes": st.column_config.TextColumn(
+                "Notes",
+                width="large"
+            )
+        },
+        hide_index=True
+    )
+    
+    # Update session state
+    st.session_state.ledger_df = edited_ledger
+    
+    # Summary statistics
+    st.markdown("---")
+    st.subheader("📊 Ledger Summary")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_spent = filtered_df['Amount'].sum()
+    avg_transaction = filtered_df['Amount'].mean() if not filtered_df.empty else 0
+    transaction_count = len(filtered_df)
+    
+    col1.metric("Total Spent", f"${total_spent:,.2f}")
+    col2.metric("Avg Transaction", f"${avg_transaction:,.2f}")
+    col3.metric("# of Transactions", f"{transaction_count}")
+    
+    if not filtered_df.empty and transaction_count > 0:
+        largest = filtered_df.loc[filtered_df['Amount'].idxmax()]
+        col4.metric("Largest", f"${largest['Amount']:,.2f}", delta=largest['Description'])
+    
+    # Category breakdown
+    if not filtered_df.empty:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Spending by Category")
+            category_summary = filtered_df.groupby('Category').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            category_summary.columns = ['Total', '# of Transactions']
+            category_summary = category_summary.sort_values('Total', ascending=False)
+            category_summary['Total'] = category_summary['Total'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(category_summary, use_container_width=True)
+        
+        with col2:
+            st.subheader("💳 Spending by Payment Method")
+            payment_summary = filtered_df.groupby('Payment Method').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            payment_summary.columns = ['Total', '# of Transactions']
+            payment_summary = payment_summary.sort_values('Total', ascending=False)
+            payment_summary['Total'] = payment_summary['Total'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(payment_summary, use_container_width=True)
+
+# --- CALENDAR TAB ---
+with tab6:
     st.header("📅 Editable Calendar")
     
     # Month and year selector
