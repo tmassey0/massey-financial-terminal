@@ -29,7 +29,7 @@ def init_session_state():
             'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
         })
     
-    # Accounts data - create DataFrame directly without using st.session_state
+    # Accounts data
     if 'accounts_df' not in st.session_state:
         accounts_data = {
             'Account Name': [
@@ -57,13 +57,13 @@ def init_session_state():
         }
         st.session_state.accounts_df = pd.DataFrame(accounts_data)
     
-    # Payment Calendar - create AFTER accounts_df is fully initialized
-    if 'payment_calendar' not in st.session_state:
-        # Create initial payment calendar with safe defaults
+    # Calendar - create AFTER accounts_df is fully initialized
+    if 'calendar_df' not in st.session_state:
+        # Create initial calendar with safe defaults
         current_date = datetime.datetime.now()
         current_month = current_date.month
         current_year = current_date.year
-        st.session_state.payment_calendar = create_payment_calendar_safe(current_month, current_year)
+        st.session_state.calendar_df = create_calendar_safe(current_month, current_year)
     
     # Revenue data
     if 'revenue_df' not in st.session_state:
@@ -83,8 +83,8 @@ def init_session_state():
     if 'revenue_history' not in st.session_state:
         st.session_state.revenue_history = []
 
-def create_payment_calendar_safe(month, year):
-    """Create a payment calendar with safe error handling"""
+def create_calendar_safe(month, year):
+    """Create a calendar with safe error handling"""
     try:
         # Check if accounts_df exists and is not empty
         if 'accounts_df' not in st.session_state:
@@ -134,7 +134,7 @@ def create_payment_calendar_safe(month, year):
                     'Status': 'Upcoming',
                     'Payment Date': None,
                     'Notes': '',
-                    'Notification Date': notification_date if account.get('Notification') == 'Yes' else None
+                    'Notify By': notification_date if account.get('Notification') == 'Yes' else None
                 })
             except Exception as e:
                 # Skip problematic entries
@@ -158,8 +158,8 @@ init_session_state()
 # App title
 st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "📅 PAYMENT CALENDAR", "💰 REVENUE"])
+# Create tabs - changed from "PAYMENT CALENDAR" to "CALENDAR"
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "📅 CALENDAR", "💰 REVENUE"])
 
 # --- DASHBOARD TAB ---
 with tab1:
@@ -263,10 +263,10 @@ with tab1:
     
     # Upcoming Payments from Calendar
     st.subheader("📅 Upcoming Payments")
-    if 'payment_calendar' in st.session_state and not st.session_state.payment_calendar.empty:
-        upcoming = st.session_state.payment_calendar[
-            (st.session_state.payment_calendar['Due Date'] >= datetime.date.today()) &
-            (st.session_state.payment_calendar['Status'] == 'Upcoming')
+    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
+        upcoming = st.session_state.calendar_df[
+            (st.session_state.calendar_df['Due Date'] >= datetime.date.today()) &
+            (st.session_state.calendar_df['Status'] == 'Upcoming')
         ].head(5)
         
         if not upcoming.empty:
@@ -341,9 +341,9 @@ with tab3:
         )
         st.session_state.accounts_df = edited_accounts
         
-        # Update payment calendar when accounts change
+        # Update calendar when accounts change
         current_date = datetime.datetime.now()
-        st.session_state.payment_calendar = create_payment_calendar_safe(current_date.month, current_date.year)
+        st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
         
         # Summary statistics for accounts
         st.markdown("---")
@@ -399,9 +399,9 @@ with tab3:
     else:
         st.warning("No account data available")
 
-# --- PAYMENT CALENDAR TAB ---
+# --- CALENDAR TAB (formerly PAYMENT CALENDAR) ---
 with tab4:
-    st.header("📅 Editable Payment Calendar")
+    st.header("📅 Editable Calendar")
     
     # Month and year selector
     col1, col2, col3 = st.columns([1, 1, 2])
@@ -420,7 +420,7 @@ with tab4:
     
     # Update calendar when month/year changes
     if st.button("📅 Load Month", key="load_month"):
-        st.session_state.payment_calendar = create_payment_calendar_safe(selected_month, selected_year)
+        st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
         st.rerun()
     
     # Notification Settings
@@ -458,15 +458,15 @@ with tab4:
         if st.button("Save Notification Settings"):
             st.success("Notification settings saved!")
             # Recreate calendar to update notification dates
-            st.session_state.payment_calendar = create_payment_calendar_safe(selected_month, selected_year)
+            st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
             st.rerun()
     
-    # Display payment calendar
-    if 'payment_calendar' in st.session_state and not st.session_state.payment_calendar.empty:
-        st.subheader(f"Payment Schedule - {calendar.month_name[selected_month]} {selected_year}")
+    # Display calendar
+    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
+        st.subheader(f"Schedule - {calendar.month_name[selected_month]} {selected_year}")
         
         edited_calendar = st.data_editor(
-            st.session_state.payment_calendar,
+            st.session_state.calendar_df,
             num_rows="dynamic",
             use_container_width=True,
             key="calendar_editor",
@@ -485,19 +485,19 @@ with tab4:
                 ),
                 "Payment Date": st.column_config.DateColumn("Payment Date"),
                 "Notes": st.column_config.TextColumn("Notes"),
-                "Notification Date": st.column_config.DateColumn("Notify By", disabled=True)
+                "Notify By": st.column_config.DateColumn("Notify By", disabled=True)
             },
             hide_index=True
         )
         
         # Update calendar when edited
-        if not edited_calendar.equals(st.session_state.payment_calendar):
-            st.session_state.payment_calendar = edited_calendar
+        if not edited_calendar.equals(st.session_state.calendar_df):
+            st.session_state.calendar_df = edited_calendar
             st.rerun()
         
         # Summary stats
         st.markdown("---")
-        st.subheader("📊 Payment Summary")
+        st.subheader("📊 Summary")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -508,15 +508,15 @@ with tab4:
         
         col1.metric("Total Due", f"${total_due:,.2f}")
         col2.metric("Total Paid", f"${total_paid:,.2f}")
-        col3.metric("Upcoming Payments", f"{upcoming_count}")
-        col4.metric("Completed Payments", f"{paid_count}")
+        col3.metric("Upcoming", f"{upcoming_count}")
+        col4.metric("Completed", f"{paid_count}")
         
         # Upcoming notifications
         st.subheader("🔔 Upcoming Notifications")
         today = datetime.date.today()
         upcoming_notifications = edited_calendar[
             (edited_calendar['Notification'] == 'Yes') &
-            (edited_calendar['Notification Date'] <= today) &
+            (edited_calendar['Notify By'] <= today) &
             (edited_calendar['Status'] == 'Upcoming')
         ]
         
