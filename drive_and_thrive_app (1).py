@@ -1,378 +1,1005 @@
-import streamlit as st
-import pandas as pd
-import datetime
-
-# This must be the first Streamlit command
-st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
-
-# Initialize all session state variables at the very beginning
-def init_session_state():
-    """Initialize all session state variables"""
-    
-    # Cards data
-    if 'cards_df' not in st.session_state:
-        st.session_state.cards_df = pd.DataFrame({
-            'Card': ['Card1', 'Card2', 'Card3', 'Card4', 'Card5'],
-            'Bank': ['Navy Federal', 'Indigo 3069', 'Indigo 1448', 'Milestone 5093', 'Destiny 3992'],
-            'Limit': [1500, 500, 1000, 500, 1000],
-            'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
-        })
-    
-    # Bills data - ALL 13 BILLS from the spreadsheet
-    if 'bills_df' not in st.session_state:
-        # Create the bills dataframe with all 13 bills
-        bills_data = {
-            'Bill Name': [
-                'Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 
-                'Intuit', 'Cell Phone', 'Car Payment', 'Car Insurance',
-                'Gas/Fuel', 'Groceries', 'Klarna', 'Affirm', 'NTTA'
-            ],
-            'Amount': [478, 109, 180, 98, 75, 80, 785, 0, 200, 400, 45, 30, 600],
-            'Due Day': [1, 1, 1, 1, 20, 5, 24, 10, 15, 1, 15, 20, 15],
-            'Pay Via': [
-                'Card1', 'Card1', 'Card2', 'Card2', 
-                'Card2', 'Card3', 'Card3', 'Card1',
-                'Card4', 'Card3', 'Card2', 'Card5', 'Card5'
-            ],
-            'Category': [
-                'Housing', 'Housing', 'Housing', 'Housing',
-                'Utilities', 'Phone', 'Auto', 'Auto',
-                'Auto', 'Health', 'Entertainment', 'Food', 'Auto'
-            ],
-            'Late Fee': [40, 25, 25, 20, 0, 25, 39, 25, 0, 0, 25, 0, 25],
-            'Grace Days': [5, 5, 5, 5, 0, 0, 10, 10, 0, 0, 0, 0, 30],
-            'Active': ['Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes', 'Yes']
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edible Bill Payment Calendar</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-        st.session_state.bills_df = pd.DataFrame(bills_data)
-    
-    # Revenue data
-    if 'revenue_df' not in st.session_state:
-        data = {
-            'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-            'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
-            'Hours': [8.53, 0, 0, 0, 0, 0, 0],
-            'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
-            'Goal': [150, 150, 150, 150, 150, 150, 150]
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
         }
-        df = pd.DataFrame(data)
-        df['Difference'] = df['Earnings'] - df['Goal']
-        df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-        st.session_state.revenue_df = df
-    
-    # Revenue history for undo
-    if 'revenue_history' not in st.session_state:
-        st.session_state.revenue_history = []
-
-# Call initialization
-init_session_state()
-
-# App title
-st.title("🏛️ Strategic Capital Terminal")
-
-# Create tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📅 BILLS", "💰 REVENUE"])
-
-# --- DASHBOARD TAB ---
-with tab1:
-    st.header("Financial Dashboard")
-    
-    # Overview Section
-    st.subheader("📈 Overview")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    total_limit = st.session_state.cards_df['Limit'].sum()
-    total_balance = st.session_state.cards_df['Balance'].sum()
-    available = total_limit - total_balance
-    utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-    
-    col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
-    col2.metric("Total Balance", f"${total_balance:,.2f}")
-    col3.metric("Available Credit", f"${available:,.2f}")
-    col4.metric("Utilization", f"{utilization:.1f}%")
-    
-    # Revenue Section
-    st.subheader("🚖 Revenue")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    total_hours = st.session_state.revenue_df['Hours'].sum()
-    total_earnings = st.session_state.revenue_df['Earnings'].sum()
-    total_goal = st.session_state.revenue_df['Goal'].sum()
-    avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
-    
-    col1.metric("Total Hours", f"{total_hours:.2f}")
-    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-    col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
-    col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
-    
-    # Bills Section
-    st.subheader("📋 Bills")
-    col1, col2, col3 = st.columns(3)
-    
-    # Calculate total active bills
-    active_bills_df = st.session_state.bills_df[st.session_state.bills_df['Active'] == 'Yes']
-    total_bills = active_bills_df['Amount'].sum()
-    num_active_bills = len(active_bills_df)
-    
-    col1.metric("Total Monthly Bills", f"${total_bills:,.2f}")
-    col2.metric("Active Bills", f"{num_active_bills}")
-    col3.metric("Avg Bill Amount", f"${total_bills/num_active_bills:,.2f}" if num_active_bills > 0 else "$0")
-    
-    # Show all bills in an expander
-    with st.expander("📋 All Bills List"):
-        display_bills = active_bills_df[['Bill Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
-        display_bills['Amount'] = display_bills['Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(display_bills, use_container_width=True, hide_index=True)
-    
-    # Category breakdown
-    with st.expander("📊 Category Breakdown"):
-        category_totals = active_bills_df.groupby('Category')['Amount'].sum().reset_index()
-        category_totals.columns = ['Category', 'Total']
-        category_totals = category_totals.sort_values('Total', ascending=False)
-        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(category_totals, use_container_width=True, hide_index=True)
-    
-    # Cash Flow
-    st.subheader("💰 Cash Flow")
-    col1, col2, col3 = st.columns(3)
-    
-    net_cash = total_earnings - total_bills
-    col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
-    col2.metric("Monthly Bills", f"${total_bills:,.2f}")
-    
-    if net_cash >= 0:
-        col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
-    else:
-        col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
-
-# --- CARDS TAB ---
-with tab2:
-    st.header("Credit Card Management")
-    
-    # Data editor for cards
-    edited_cards = st.data_editor(
-        st.session_state.cards_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="cards_editor",
-        column_config={
-            "Card": st.column_config.TextColumn("Card", width="small"),
-            "Bank": st.column_config.TextColumn("Bank", width="medium"),
-            "Limit": st.column_config.NumberColumn("Credit Limit", format="$%.2f"),
-            "Balance": st.column_config.NumberColumn("Current Balance", format="$%.2f")
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
-    )
-    st.session_state.cards_df = edited_cards
-    
-    if st.button("Save Cards", key="save_cards"):
-        st.success("Cards saved successfully!")
-
-# --- BILLS TAB ---
-with tab3:
-    st.header("Bill Management")
-    st.info("📋 All 13 monthly bills from your spreadsheet - Edit as needed")
-    
-    # Show bill count
-    total_bills = len(st.session_state.bills_df)
-    active_bills = len(st.session_state.bills_df[st.session_state.bills_df['Active'] == 'Yes'])
-    st.write(f"**Total Bills:** {total_bills} | **Active Bills:** {active_bills}")
-    
-    # Data editor for bills - Now showing all columns
-    edited_bills = st.data_editor(
-        st.session_state.bills_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="bills_editor",
-        column_config={
-            "Bill Name": st.column_config.TextColumn("Bill Name", width="medium"),
-            "Amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
-            "Due Day": st.column_config.NumberColumn("Due Day", min_value=1, max_value=31, step=1),
-            "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
-            "Category": st.column_config.TextColumn("Category", width="small"),
-            "Late Fee": st.column_config.NumberColumn("Late Fee ($)", format="$%.2f"),
-            "Grace Days": st.column_config.NumberColumn("Grace Days", min_value=0),
-            "Active": st.column_config.SelectboxColumn("Active", options=['Yes', 'No'])
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            gap: 20px;
         }
-    )
-    st.session_state.bills_df = edited_bills
+        
+        h1 {
+            color: #333;
+            font-size: 2.5em;
+        }
+        
+        h1 span {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .year-display {
+            font-size: 1.2em;
+            color: #666;
+        }
+        
+        .add-account-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 1em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s;
+        }
+        
+        .add-account-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .accounts-list-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .section-title h2 {
+            color: #333;
+            font-size: 1.5em;
+        }
+        
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .account-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+            border-left: 4px solid #667eea;
+        }
+        
+        .account-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+        
+        .account-info h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .account-details {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .account-details span {
+            margin-right: 15px;
+        }
+        
+        .account-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .edit-btn, .delete-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.2em;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background 0.2s;
+        }
+        
+        .edit-btn:hover {
+            background: #e3f2fd;
+        }
+        
+        .delete-btn:hover {
+            background: #ffebee;
+        }
+        
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .month-card {
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        
+        .month-card:hover {
+            transform: scale(1.02);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+        }
+        
+        .month-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .month-name {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .month-total {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+        }
+        
+        .month-bills {
+            min-height: 100px;
+        }
+        
+        .bill-item {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            border-left: 3px solid #667eea;
+            transition: all 0.2s;
+        }
+        
+        .bill-item:hover {
+            background: #f0f0f0;
+        }
+        
+        .bill-item.paid {
+            opacity: 0.6;
+            border-left-color: #4caf50;
+        }
+        
+        .bill-item.paid .bill-amount {
+            text-decoration: line-through;
+            color: #666;
+        }
+        
+        .bill-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .bill-name {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .bill-date {
+            font-size: 0.8em;
+            color: #666;
+        }
+        
+        .bill-amount {
+            font-weight: bold;
+            color: #2e7d32;
+        }
+        
+        .bill-actions {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .bill-paid-toggle {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 2px solid #667eea;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            transition: all 0.2s;
+        }
+        
+        .bill-paid-toggle.checked {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+        
+        .bill-paid-toggle.checked::after {
+            content: "✓";
+            font-size: 14px;
+        }
+        
+        .no-bills {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 15px;
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            color: #333;
+        }
+        
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .btn-primary,
+        .btn-secondary {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .btn-danger {
+            background: #ff4444;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-danger:hover {
+            background: #cc0000;
+        }
+        
+        .month-view-modal .modal-content {
+            max-width: 800px;
+        }
+        
+        .month-days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .day-cell {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 10px;
+            min-height: 100px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .day-header {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        
+        .day-number {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .day-bills {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .day-bill {
+            background: white;
+            border-radius: 4px;
+            padding: 3px 6px;
+            font-size: 0.8em;
+            border-left: 2px solid #667eea;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .day-bill:hover {
+            background: #e3f2fd;
+        }
+        
+        .day-bill.paid {
+            border-left-color: #4caf50;
+            opacity: 0.7;
+        }
+        
+        .weekday-header {
+            text-align: center;
+            font-weight: bold;
+            color: #333;
+            padding: 5px;
+        }
+        
+        @media (max-width: 1024px) {
+            .calendar-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .calendar-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>🍽️ <span>Edible</span> Bill Calendar</h1>
+                <div class="year-display">2026 Financial Year</div>
+            </div>
+            <button class="add-account-btn" onclick="openAddAccountModal()">
+                + Add New Account
+            </button>
+        </header>
+        
+        <!-- Accounts List Section -->
+        <div class="accounts-list-section">
+            <div class="section-title">
+                <h2>Your Accounts</h2>
+                <span class="account-count" id="accountCount">0 accounts</span>
+            </div>
+            <div class="accounts-grid" id="accountsList"></div>
+        </div>
+        
+        <!-- Calendar Grid -->
+        <div class="calendar-grid" id="calendarGrid"></div>
+    </div>
     
-    # Summary statistics for bills
-    st.markdown("---")
-    st.subheader("📊 Bill Summary")
+    <!-- Add/Edit Account Modal -->
+    <div class="modal" id="accountModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add New Account</h2>
+                <button class="close-modal" onclick="closeAccountModal()">&times;</button>
+            </div>
+            <form id="accountForm" onsubmit="event.preventDefault(); saveAccount();">
+                <input type="hidden" id="accountId">
+                <div class="form-group">
+                    <label for="accountName">Account Name</label>
+                    <input type="text" id="accountName" required placeholder="e.g., Rent, Internet, Netflix">
+                </div>
+                <div class="form-group">
+                    <label for="accountAmount">Amount ($)</label>
+                    <input type="number" id="accountAmount" required min="0" step="0.01" placeholder="2500.00">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="accountDueDay">Due Day (1-31)</label>
+                        <input type="number" id="accountDueDay" required min="1" max="31" placeholder="15">
+                    </div>
+                    <div class="form-group">
+                        <label for="accountCategory">Category</label>
+                        <select id="accountCategory" required>
+                            <option value="Rent/Mortgage">Rent/Mortgage</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Internet">Internet</option>
+                            <option value="Phone">Phone</option>
+                            <option value="Insurance">Insurance</option>
+                            <option value="Subscriptions">Subscriptions</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="accountNotes">Notes (Optional)</label>
+                    <input type="text" id="accountNotes" placeholder="Any additional details">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-danger" id="deleteAccountBtn" onclick="deleteCurrentAccount()" style="display: none;">Delete Account</button>
+                    <div style="flex:1;"></div>
+                    <button type="button" class="btn-secondary" onclick="closeAccountModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Account</button>
+                </div>
+            </form>
+        </div>
+    </div>
     
-    col1, col2, col3, col4 = st.columns(4)
+    <!-- Month Detail View Modal -->
+    <div class="modal month-view-modal" id="monthViewModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="monthViewTitle">Month View</h2>
+                <button class="close-modal" onclick="closeMonthViewModal()">&times;</button>
+            </div>
+            <div id="monthViewContent"></div>
+        </div>
+    </div>
     
-    active_bills = edited_bills[edited_bills['Active'] == 'Yes']
-    inactive_bills = edited_bills[edited_bills['Active'] == 'No']
-    
-    total_active = active_bills['Amount'].sum()
-    total_inactive = inactive_bills['Amount'].sum()
-    
-    col1.metric("Total Active Bills", f"${total_active:,.2f}")
-    col2.metric("Total Inactive Bills", f"${total_inactive:,.2f}")
-    col3.metric("Number Active", f"{len(active_bills)}")
-    col4.metric("Number Inactive", f"{len(inactive_bills)}")
-    
-    # Late fee exposure
-    st.subheader("⚠️ Late Fee Exposure")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Late Fee Risk", f"${active_bills['Late Fee'].sum():,.2f}")
-    col2.metric("Bills with Late Fees", f"{len(active_bills[active_bills['Late Fee'] > 0])}")
-    col3.metric("Avg Late Fee", f"${active_bills[active_bills['Late Fee'] > 0]['Late Fee'].mean():,.2f}" if len(active_bills[active_bills['Late Fee'] > 0]) > 0 else "$0")
-    
-    # Bills by category
-    with st.expander("📊 Bills by Category"):
-        category_summary = active_bills.groupby('Category').agg({
-            'Amount': ['sum', 'count']
-        }).round(2)
-        category_summary.columns = ['Total Amount', 'Number of Bills']
-        category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(category_summary, use_container_width=True)
-    
-    # Bills by card
-    with st.expander("💳 Bills by Card"):
-        card_summary = active_bills.groupby('Pay Via').agg({
-            'Amount': ['sum', 'count']
-        }).round(2)
-        card_summary.columns = ['Total Amount', 'Number of Bills']
-        card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(card_summary, use_container_width=True)
-    
-    if st.button("Save Bills", key="save_bills"):
-        st.success("Bills saved successfully!")
+    <!-- Edit Bill Instance Modal -->
+    <div class="modal" id="editBillModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Bill</h2>
+                <button class="close-modal" onclick="closeEditBillModal()">&times;</button>
+            </div>
+            <form id="editBillForm" onsubmit="event.preventDefault(); saveBillEdit();">
+                <input type="hidden" id="editBillId">
+                <input type="hidden" id="editBillAccountId">
+                <input type="hidden" id="editBillMonth">
+                <input type="hidden" id="editBillYear">
+                <div class="form-group">
+                    <label for="editBillName">Bill Name</label>
+                    <input type="text" id="editBillName" required readonly>
+                </div>
+                <div class="form-group">
+                    <label for="editBillAmount">Amount ($)</label>
+                    <input type="number" id="editBillAmount" required min="0" step="0.01">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editBillDay">Due Date</label>
+                        <input type="number" id="editBillDay" required min="1" max="31">
+                    </div>
+                    <div class="form-group">
+                        <label for="editBillStatus">Status</label>
+                        <select id="editBillStatus">
+                            <option value="unpaid">Unpaid</option>
+                            <option value="paid">Paid</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editBillNotes">Notes</label>
+                    <input type="text" id="editBillNotes">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeEditBillModal()">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-# --- REVENUE TAB ---
-with tab4:
-    st.header("💰 Revenue Tracker")
-    
-    # Action buttons in columns
-    col1, col2, col3 = st.columns([1, 1, 4])
-    
-    # Undo button
-    with col1:
-        if st.button("↩️ Undo", key="undo_revenue"):
-            if st.session_state.revenue_history:
-                st.session_state.revenue_df = st.session_state.revenue_history.pop()
-                st.rerun()
-            else:
-                st.warning("No more undos available")
-    
-    # Update button
-    with col2:
-        if st.button("🔄 Update", key="update_revenue"):
-            df = st.session_state.revenue_df.copy()
-            df['Difference'] = df['Earnings'] - df['Goal']
-            df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-            if len(st.session_state.revenue_history) > 10:
-                st.session_state.revenue_history.pop(0)
-            st.session_state.revenue_df = df
-            st.rerun()
-    
-    # Data editor for revenue
-    edited_revenue = st.data_editor(
-        st.session_state.revenue_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="revenue_editor",
-        column_config={
-            "Day": st.column_config.TextColumn("Day", width="small"),
-            "Date": st.column_config.TextColumn("Date", width="small"),
-            "Hours": st.column_config.NumberColumn(
-                "Hours", 
-                min_value=0.0,
-                max_value=24.0,
-                step=0.01,
-                format="%.2f"
-            ),
-            "Earnings": st.column_config.NumberColumn(
-                "Earnings ($)", 
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Goal": st.column_config.NumberColumn(
-                "Goal ($)", 
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Difference": st.column_config.NumberColumn(
-                "Diff ($)", 
-                disabled=True, 
-                format="$%.2f"
-            ),
-            "Status": st.column_config.TextColumn(
-                "Status", 
-                disabled=True
-            )
-        },
-        hide_index=True
-    )
-    
-    # Auto-update calculations when data changes
-    if 'last_revenue_state' not in st.session_state:
-        st.session_state.last_revenue_state = edited_revenue.to_dict()
-    else:
-        if edited_revenue.to_dict() != st.session_state.last_revenue_state:
-            edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
-            edited_revenue['Status'] = edited_revenue['Difference'].apply(
-                lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
-            )
-            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-            if len(st.session_state.revenue_history) > 10:
-                st.session_state.revenue_history.pop(0)
-            st.session_state.revenue_df = edited_revenue
-            st.session_state.last_revenue_state = edited_revenue.to_dict()
-    
-    # Summary section
-    st.markdown("---")
-    st.subheader("📊 Summary")
-    
-    total_hours = edited_revenue['Hours'].sum()
-    total_earnings = edited_revenue['Earnings'].sum()
-    total_goal = edited_revenue['Goal'].sum()
-    total_diff = total_earnings - total_goal
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Hours", f"{total_hours:.2f}")
-    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-    col3.metric("Total Goal", f"${total_goal:,.2f}")
-    
-    if total_diff >= 0:
-        col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
-    else:
-        col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
-    
-    days_above = len(edited_revenue[edited_revenue['Earnings'] >= edited_revenue['Goal']])
-    days_below = len(edited_revenue[edited_revenue['Earnings'] < edited_revenue['Goal']])
-    success_rate = (days_above / len(edited_revenue) * 100) if len(edited_revenue) > 0 else 0
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Days Above Goal", f"{days_above}")
-    col2.metric("Days Below Goal", f"{days_below}")
-    col3.metric("Success Rate", f"{success_rate:.1f}%")
-    
-    # Add Week button
-    if st.button("📅 Add Week", key="add_week"):
-        st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+    <script>
+        // Data Storage
+        let accounts = [];
+        let paidBills = {}; // Track paid status: { "accountId-month-year": true/false }
+        let billOverrides = {}; // Track amount overrides: { "accountId-month-year": amount }
         
-        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        current_date = datetime.datetime.now()
+        // Load from localStorage
+        function loadData() {
+            const saved = localStorage.getItem('edibleBillCalendar');
+            if (saved) {
+                const data = JSON.parse(saved);
+                accounts = data.accounts || [];
+                paidBills = data.paidBills || {};
+                billOverrides = data.billOverrides || {};
+            } else {
+                // Default sample data
+                accounts = [
+                    { id: '1', name: 'Rent', amount: 2500, dueDay: 1, category: 'Rent/Mortgage', notes: 'Apartment rent' },
+                    { id: '2', name: 'Internet', amount: 85, dueDay: 15, category: 'Internet', notes: 'Spectrum' },
+                    { id: '3', name: 'Electricity', amount: 150, dueDay: 10, category: 'Utilities', notes: 'Average' },
+                    { id: '4', name: 'Netflix', amount: 15.99, dueDay: 20, category: 'Subscriptions', notes: 'Premium plan' },
+                    { id: '5', name: 'Phone', amount: 89, dueDay: 25, category: 'Phone', notes: 'Verizon' },
+                    { id: '6', name: 'Car Insurance', amount: 120, dueDay: 5, category: 'Insurance', notes: 'Progressive' }
+                ];
+                paidBills = {};
+                billOverrides = {};
+            }
+        }
         
-        week_rows = []
-        for i, day in enumerate(days):
-            week_date = current_date + datetime.timedelta(days=i)
-            week_rows.append({
-                'Day': day,
-                'Date': week_date.strftime("%Y-%m-%d"),
-                'Hours': 0.0,
-                'Earnings': 0.0,
-                'Goal': 175.0
-            })
+        // Save to localStorage
+        function saveData() {
+            localStorage.setItem('edibleBillCalendar', JSON.stringify({
+                accounts: accounts,
+                paidBills: paidBills,
+                billOverrides: billOverrides
+            }));
+        }
         
-        week_df = pd.DataFrame(week_rows)
-        week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
-        week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+        // Month names
+        const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
         
-        st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
-        st.rerun()
+        // Render accounts list
+        function renderAccountsList() {
+            const list = document.getElementById('accountsList');
+            const countSpan = document.getElementById('accountCount');
+            
+            if (accounts.length === 0) {
+                list.innerHTML = '<div class="no-bills">No accounts yet. Click "Add New Account" to get started.</div>';
+                countSpan.textContent = '0 accounts';
+                return;
+            }
+            
+            list.innerHTML = accounts.map(account => `
+                <div class="account-card" data-account-id="${account.id}">
+                    <div class="account-info">
+                        <h3>${account.name}</h3>
+                        <div class="account-details">
+                            <span>$${account.amount.toFixed(2)}</span>
+                            <span>Due: ${getOrdinal(account.dueDay)}</span>
+                            <span>${account.category}</span>
+                        </div>
+                    </div>
+                    <div class="account-actions">
+                        <button class="edit-btn" onclick="editAccount('${account.id}')" title="Edit">✏️</button>
+                        <button class="delete-btn" onclick="deleteAccount('${account.id}')" title="Delete">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            countSpan.textContent = `${accounts.length} account${accounts.length !== 1 ? 's' : ''}`;
+        }
+        
+        // Get ordinal suffix
+        function getOrdinal(n) {
+            const s = ['th', 'st', 'nd', 'rd'];
+            const v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        }
+        
+        // Render calendar grid
+        function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            const currentYear = 2026;
+            
+            grid.innerHTML = monthNames.map((month, index) => {
+                const monthBills = getBillsForMonth(index, currentYear);
+                const total = monthBills.reduce((sum, bill) => sum + bill.amount, 0);
+                
+                return `
+                    <div class="month-card" onclick="openMonthView(${index}, ${currentYear})">
+                        <div class="month-header">
+                            <span class="month-name">${month}</span>
+                            <span class="month-total">$${total.toFixed(2)}</span>
+                        </div>
+                        <div class="month-bills">
+                            ${monthBills.slice(0, 3).map(bill => `
+                                <div class="bill-item ${bill.paid ? 'paid' : ''}" onclick="event.stopPropagation(); openEditBillModal('${bill.id}', '${bill.accountId}', ${bill.day}, ${bill.amount}, '${bill.name}', '${bill.notes || ''}', ${index}, ${currentYear}, ${bill.paid})">
+                                    <div class="bill-info">
+                                        <span class="bill-name">${bill.name}</span>
+                                        <span class="bill-date">Due: ${getOrdinal(bill.day)}</span>
+                                    </div>
+                                    <span class="bill-amount">$${bill.amount.toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                            ${monthBills.length > 3 ? `<div class="bill-item" style="justify-content: center; color: #667eea;">+${monthBills.length - 3} more...</div>` : ''}
+                            ${monthBills.length === 0 ? '<div class="no-bills">No bills this month</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Get bills for a specific month
+        function getBillsForMonth(month, year) {
+            const bills = [];
+            
+            accounts.forEach(account => {
+                const key = `${account.id}-${month}-${year}`;
+                const isPaid = paidBills[key] || false;
+                
+                // Check if there's an override for this bill this month
+                let amount = account.amount;
+                if (billOverrides[key]) {
+                    amount = billOverrides[key];
+                }
+                
+                bills.push({
+                    id: key,
+                    accountId: account.id,
+                    name: account.name,
+                    amount: amount,
+                    day: account.dueDay,
+                    paid: isPaid,
+                    notes: account.notes,
+                    category: account.category
+                });
+            });
+            
+            // Sort by due day
+            return bills.sort((a, b) => a.day - b.day);
+        }
+        
+        // Account Modal functions
+        function openAddAccountModal() {
+            document.getElementById('modalTitle').textContent = 'Add New Account';
+            document.getElementById('accountForm').reset();
+            document.getElementById('accountId').value = '';
+            document.getElementById('deleteAccountBtn').style.display = 'none';
+            document.getElementById('accountModal').classList.add('active');
+        }
+        
+        function editAccount(id) {
+            const account = accounts.find(a => a.id === id);
+            if (!account) return;
+            
+            document.getElementById('modalTitle').textContent = 'Edit Account';
+            document.getElementById('accountId').value = account.id;
+            document.getElementById('accountName').value = account.name;
+            document.getElementById('accountAmount').value = account.amount;
+            document.getElementById('accountDueDay').value = account.dueDay;
+            document.getElementById('accountCategory').value = account.category;
+            document.getElementById('accountNotes').value = account.notes || '';
+            document.getElementById('deleteAccountBtn').style.display = 'block';
+            document.getElementById('accountModal').classList.add('active');
+        }
+        
+        function closeAccountModal() {
+            document.getElementById('accountModal').classList.remove('active');
+        }
+        
+        function saveAccount() {
+            const id = document.getElementById('accountId').value;
+            const name = document.getElementById('accountName').value;
+            const amount = parseFloat(document.getElementById('accountAmount').value);
+            const dueDay = parseInt(document.getElementById('accountDueDay').value);
+            const category = document.getElementById('accountCategory').value;
+            const notes = document.getElementById('accountNotes').value;
+            
+            if (id) {
+                // Update existing
+                const index = accounts.findIndex(a => a.id === id);
+                if (index !== -1) {
+                    accounts[index] = { ...accounts[index], name, amount, dueDay, category, notes };
+                }
+            } else {
+                // Add new
+                const newId = Date.now().toString();
+                accounts.push({
+                    id: newId,
+                    name,
+                    amount,
+                    dueDay,
+                    category,
+                    notes
+                });
+            }
+            
+            saveData();
+            renderAccountsList();
+            renderCalendar();
+            closeAccountModal();
+        }
+        
+        function deleteAccount(id) {
+            if (confirm('Are you sure you want to delete this account? This will remove all associated bills.')) {
+                accounts = accounts.filter(a => a.id !== id);
+                
+                // Clean up paidBills and overrides for this account
+                Object.keys(paidBills).forEach(key => {
+                    if (key.startsWith(id + '-')) {
+                        delete paidBills[key];
+                    }
+                });
+                Object.keys(billOverrides).forEach(key => {
+                    if (key.startsWith(id + '-')) {
+                        delete billOverrides[key];
+                    }
+                });
+                
+                saveData();
+                renderAccountsList();
+                renderCalendar();
+            }
+        }
+        
+        function deleteCurrentAccount() {
+            const id = document.getElementById('accountId').value;
+            if (id) {
+                deleteAccount(id);
+                closeAccountModal();
+            }
+        }
+        
+        // Month View functions
+        function openMonthView(month, year) {
+            const monthName = monthNames[month];
+            document.getElementById('monthViewTitle').textContent = `${monthName} ${year}`;
+            
+            const bills = getBillsForMonth(month, year);
+            
+            // Create calendar days
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const firstDay = new Date(year, month, 1).getDay(); // 0 = Sunday
+            
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            
+            let daysHTML = '<div class="month-days-grid">';
+            
+            // Weekday headers
+            weekdays.forEach(day => {
+                daysHTML += `<div class="weekday-header">${day}</div>`;
+            });
+            
+            // Empty cells for days before month starts
+            for (let i = 0; i < firstDay; i++) {
+                daysHTML += '<div class="day-cell"></div>';
+            }
+            
+            // Days of the month
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dayBills = bills.filter(b => b.day === d);
+                
+                daysHTML += `
+                    <div class="day-cell">
+                        <div class="day-number">${d}</div>
+                        <div class="day-bills">
+                            ${dayBills.map(bill => `
+                                <div class="day-bill ${bill.paid ? 'paid' : ''}" onclick="openEditBillModal('${bill.id}', '${bill.accountId}', ${bill.day}, ${bill.amount}, '${bill.name}', '${bill.notes || ''}', ${month}, ${year}, ${bill.paid})">
+                                    ${bill.name}: $${bill.amount.toFixed(2)}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            daysHTML += '</div>';
+            document.getElementById('monthViewContent').innerHTML = daysHTML;
+            document.getElementById('monthViewModal').classList.add('active');
+        }
+        
+        function closeMonthViewModal() {
+            document.getElementById('monthViewModal').classList.remove('active');
+        }
+        
+        // Edit Bill Modal functions
+        function openEditBillModal(id, accountId, day, amount, name, notes, month, year, paid) {
+            document.getElementById('editBillId').value = id;
+            document.getElementById('editBillAccountId').value = accountId;
+            document.getElementById('editBillMonth').value = month;
+            document.getElementById('editBillYear').value = year;
+            document.getElementById('editBillName').value = name;
+            document.getElementById('editBillAmount').value = amount;
+            document.getElementById('editBillDay').value = day;
+            document.getElementById('editBillStatus').value = paid ? 'paid' : 'unpaid';
+            document.getElementById('editBillNotes').value = notes || '';
+            
+            document.getElementById('editBillModal').classList.add('active');
+        }
+        
+        function closeEditBillModal() {
+            document.getElementById('editBillModal').classList.remove('active');
+        }
+        
+        function saveBillEdit() {
+            const id = document.getElementById('editBillId').value;
+            const accountId = document.getElementById('editBillAccountId').value;
+            const month = document.getElementById('editBillMonth').value;
+            const year = document.getElementById('editBillYear').value;
+            const amount = parseFloat(document.getElementById('editBillAmount').value);
+            const day = parseInt(document.getElementById('editBillDay').value);
+            const status = document.getElementById('editBillStatus').value;
+            const notes = document.getElementById('editBillNotes').value;
+            
+            const key = `${accountId}-${month}-${year}`;
+            
+            // Save override amount if different from default
+            const account = accounts.find(a => a.id === accountId);
+            if (account && Math.abs(account.amount - amount) > 0.01) {
+                billOverrides[key] = amount;
+            } else {
+                delete billOverrides[key];
+            }
+            
+            // Save paid status
+            if (status === 'paid') {
+                paidBills[key] = true;
+            } else {
+                delete paidBills[key];
+            }
+            
+            // Update account notes if changed (this is a bit hacky - in real app you'd want proper instance notes)
+            if (account && notes !== account.notes) {
+                // For simplicity, we're just storing notes in a separate object
+                if (!billOverrides.notes) billOverrides.notes = {};
+                if (!billOverrides.notes[key]) billOverrides.notes = { ...billOverrides.notes, [key]: notes };
+            }
+            
+            saveData();
+            renderCalendar();
+            closeEditBillModal();
+            
+            // Refresh month view if open
+            if (document.getElementById('monthViewModal').classList.contains('active')) {
+                openMonthView(parseInt(month), parseInt(year));
+            }
+        }
+        
+        // Toggle paid status from calendar
+        function togglePaid(accountId, month, year, element, event) {
+            event.stopPropagation();
+            const key = `${accountId}-${month}-${year}`;
+            
+            if (paidBills[key]) {
+                delete paidBills[key];
+            } else {
+                paidBills[key] = true;
+            }
+            
+            saveData();
+            renderCalendar();
+        }
+        
+        // Initialize
+        loadData();
+        renderAccountsList();
+        renderCalendar();
+    </script>
+</body>
+</html>
