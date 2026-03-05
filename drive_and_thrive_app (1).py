@@ -10,7 +10,7 @@ st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 def init_session_state():
     """Initialize all session state variables"""
     
-    # Initialize notification settings FIRST (before anything that uses them)
+    # Initialize notification settings FIRST
     if 'notification_settings' not in st.session_state:
         st.session_state.notification_settings = {
             'email_notifications': False,
@@ -29,9 +29,8 @@ def init_session_state():
             'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
         })
     
-    # Accounts data (formerly Bills) - ALL 13 BILLS from the spreadsheet
+    # Accounts data - create DataFrame directly without using st.session_state
     if 'accounts_df' not in st.session_state:
-        # Create the accounts dataframe with all 13 bills
         accounts_data = {
             'Account Name': [
                 'Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 
@@ -58,13 +57,13 @@ def init_session_state():
         }
         st.session_state.accounts_df = pd.DataFrame(accounts_data)
     
-    # Payment Calendar - create AFTER accounts_df and notification_settings are initialized
+    # Payment Calendar - create AFTER accounts_df is fully initialized
     if 'payment_calendar' not in st.session_state:
-        # Create initial payment calendar
+        # Create initial payment calendar with safe defaults
         current_date = datetime.datetime.now()
         current_month = current_date.month
         current_year = current_date.year
-        st.session_state.payment_calendar = create_payment_calendar(current_month, current_year)
+        st.session_state.payment_calendar = create_payment_calendar_safe(current_month, current_year)
     
     # Revenue data
     if 'revenue_df' not in st.session_state:
@@ -84,54 +83,74 @@ def init_session_state():
     if 'revenue_history' not in st.session_state:
         st.session_state.revenue_history = []
 
-def create_payment_calendar(month, year):
-    """Create a payment calendar for the specified month"""
-    # Get active accounts
-    if 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty:
-        active_accounts = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
-    else:
+def create_payment_calendar_safe(month, year):
+    """Create a payment calendar with safe error handling"""
+    try:
+        # Check if accounts_df exists and is not empty
+        if 'accounts_df' not in st.session_state:
+            return pd.DataFrame()
+        
+        accounts_df = st.session_state.accounts_df
+        if accounts_df.empty:
+            return pd.DataFrame()
+        
+        if 'Active' not in accounts_df.columns:
+            return pd.DataFrame()
+        
+        # Get active accounts
+        active_accounts = accounts_df[accounts_df['Active'] == 'Yes']
+        if active_accounts.empty:
+            return pd.DataFrame()
+        
+        # Get notification settings with safe default
+        days_before_due = 3
+        if 'notification_settings' in st.session_state:
+            days_before_due = st.session_state.notification_settings.get('days_before_due', 3)
+        
+        # Create calendar entries
+        calendar_entries = []
+        for _, account in active_accounts.iterrows():
+            try:
+                due_day = account['Due Day']
+                # Handle month-end due dates
+                last_day = calendar.monthrange(year, month)[1]
+                if due_day > last_day:
+                    due_day = last_day
+                
+                due_date = datetime.date(year, month, due_day)
+                
+                # Calculate notification date
+                notification_date = due_date - datetime.timedelta(days=days_before_due)
+                
+                calendar_entries.append({
+                    'Account': account.get('Account Name', 'Unknown'),
+                    'Amount': account.get('Amount', 0),
+                    'Due Date': due_date,
+                    'Pay Via': account.get('Pay Via', ''),
+                    'Category': account.get('Category', ''),
+                    'Late Fee': account.get('Late Fee', 0),
+                    'Auto Pay': account.get('Auto Pay', 'No'),
+                    'Notification': account.get('Notification', 'Yes'),
+                    'Status': 'Upcoming',
+                    'Payment Date': None,
+                    'Notes': '',
+                    'Notification Date': notification_date if account.get('Notification') == 'Yes' else None
+                })
+            except Exception as e:
+                # Skip problematic entries
+                continue
+        
+        # Sort by due date
+        if calendar_entries:
+            calendar_df = pd.DataFrame(calendar_entries)
+            calendar_df = calendar_df.sort_values('Due Date')
+            return calendar_df
+        else:
+            return pd.DataFrame()
+            
+    except Exception as e:
+        # Return empty DataFrame on any error
         return pd.DataFrame()
-    
-    # Get notification settings with safe default
-    days_before_due = 3
-    if 'notification_settings' in st.session_state:
-        days_before_due = st.session_state.notification_settings.get('days_before_due', 3)
-    
-    # Create calendar entries
-    calendar_entries = []
-    for _, account in active_accounts.iterrows():
-        due_day = account['Due Day']
-        # Handle month-end due dates
-        last_day = calendar.monthrange(year, month)[1]
-        if due_day > last_day:
-            due_day = last_day
-        
-        due_date = datetime.date(year, month, due_day)
-        
-        # Calculate notification date
-        notification_date = due_date - datetime.timedelta(days=days_before_due)
-        
-        calendar_entries.append({
-            'Account': account['Account Name'],
-            'Amount': account['Amount'],
-            'Due Date': due_date,
-            'Pay Via': account['Pay Via'],
-            'Category': account['Category'],
-            'Late Fee': account['Late Fee'],
-            'Auto Pay': account['Auto Pay'],
-            'Notification': account['Notification'],
-            'Status': 'Upcoming',
-            'Payment Date': None,
-            'Notes': '',
-            'Notification Date': notification_date if account['Notification'] == 'Yes' else None
-        })
-    
-    # Sort by due date
-    calendar_df = pd.DataFrame(calendar_entries)
-    if not calendar_df.empty:
-        calendar_df = calendar_df.sort_values('Due Date')
-    
-    return calendar_df
 
 # Call initialization
 init_session_state()
@@ -139,7 +158,7 @@ init_session_state()
 # App title
 st.title("🏛️ Strategic Capital Terminal")
 
-# Create tabs - changed "BILLS" to "ACCOUNTS"
+# Create tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "📅 PAYMENT CALENDAR", "💰 REVENUE"])
 
 # --- DASHBOARD TAB ---
@@ -150,73 +169,101 @@ with tab1:
     st.subheader("📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
     
-    total_limit = st.session_state.cards_df['Limit'].sum()
-    total_balance = st.session_state.cards_df['Balance'].sum()
-    available = total_limit - total_balance
-    utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-    
-    col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
-    col2.metric("Total Balance", f"${total_balance:,.2f}")
-    col3.metric("Available Credit", f"${available:,.2f}")
-    col4.metric("Utilization", f"{utilization:.1f}%")
+    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
+        total_limit = st.session_state.cards_df['Limit'].sum()
+        total_balance = st.session_state.cards_df['Balance'].sum()
+        available = total_limit - total_balance
+        utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
+        
+        col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
+        col2.metric("Total Balance", f"${total_balance:,.2f}")
+        col3.metric("Available Credit", f"${available:,.2f}")
+        col4.metric("Utilization", f"{utilization:.1f}%")
+    else:
+        col1.metric("Total Credit Limit", "$0.00")
+        col2.metric("Total Balance", "$0.00")
+        col3.metric("Available Credit", "$0.00")
+        col4.metric("Utilization", "0%")
     
     # Revenue Section
     st.subheader("🚖 Revenue")
     col1, col2, col3, col4 = st.columns(4)
     
-    total_hours = st.session_state.revenue_df['Hours'].sum()
-    total_earnings = st.session_state.revenue_df['Earnings'].sum()
-    total_goal = st.session_state.revenue_df['Goal'].sum()
-    avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
+    if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
+        total_hours = st.session_state.revenue_df['Hours'].sum()
+        total_earnings = st.session_state.revenue_df['Earnings'].sum()
+        total_goal = st.session_state.revenue_df['Goal'].sum()
+        avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
+        
+        col1.metric("Total Hours", f"{total_hours:.2f}")
+        col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+        col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
+        col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
+    else:
+        col1.metric("Total Hours", "0")
+        col2.metric("Total Earnings", "$0")
+        col3.metric("Goal vs Actual", "$0")
+        col4.metric("Avg Hourly", "$0")
     
-    col1.metric("Total Hours", f"{total_hours:.2f}")
-    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-    col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
-    col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
-    
-    # Accounts Section (formerly Bills)
+    # Accounts Section
     st.subheader("📋 Accounts")
     col1, col2, col3 = st.columns(3)
     
-    # Calculate total active accounts
-    active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
-    total_accounts = active_accounts_df['Amount'].sum()
-    num_active_accounts = len(active_accounts_df)
-    
-    col1.metric("Total Monthly Accounts", f"${total_accounts:,.2f}")
-    col2.metric("Active Accounts", f"{num_active_accounts}")
-    col3.metric("Avg Account Amount", f"${total_accounts/num_active_accounts:,.2f}" if num_active_accounts > 0 else "$0")
-    
-    # Show all accounts in an expander
-    with st.expander("📋 All Accounts List"):
-        display_accounts = active_accounts_df[['Account Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
-        display_accounts['Amount'] = display_accounts['Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(display_accounts, use_container_width=True, hide_index=True)
-    
-    # Category breakdown
-    with st.expander("📊 Category Breakdown"):
-        category_totals = active_accounts_df.groupby('Category')['Amount'].sum().reset_index()
-        category_totals.columns = ['Category', 'Total']
-        category_totals = category_totals.sort_values('Total', ascending=False)
-        category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(category_totals, use_container_width=True, hide_index=True)
+    if 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty:
+        active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
+        total_accounts = active_accounts_df['Amount'].sum()
+        num_active_accounts = len(active_accounts_df)
+        
+        col1.metric("Total Monthly Accounts", f"${total_accounts:,.2f}")
+        col2.metric("Active Accounts", f"{num_active_accounts}")
+        col3.metric("Avg Account Amount", f"${total_accounts/num_active_accounts:,.2f}" if num_active_accounts > 0 else "$0")
+        
+        # Show all accounts in an expander
+        with st.expander("📋 All Accounts List"):
+            display_accounts = active_accounts_df[['Account Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
+            display_accounts['Amount'] = display_accounts['Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(display_accounts, use_container_width=True, hide_index=True)
+        
+        # Category breakdown
+        with st.expander("📊 Category Breakdown"):
+            category_totals = active_accounts_df.groupby('Category')['Amount'].sum().reset_index()
+            category_totals.columns = ['Category', 'Total']
+            category_totals = category_totals.sort_values('Total', ascending=False)
+            category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(category_totals, use_container_width=True, hide_index=True)
+    else:
+        col1.metric("Total Monthly Accounts", "$0")
+        col2.metric("Active Accounts", "0")
+        col3.metric("Avg Account Amount", "$0")
     
     # Cash Flow
     st.subheader("💰 Cash Flow")
     col1, col2, col3 = st.columns(3)
     
-    net_cash = total_earnings - total_accounts
-    col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
-    col2.metric("Monthly Accounts", f"${total_accounts:,.2f}")
+    revenue_exists = 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty
+    accounts_exist = 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty
     
-    if net_cash >= 0:
-        col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
+    if revenue_exists and accounts_exist:
+        total_earnings = st.session_state.revenue_df['Earnings'].sum()
+        active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
+        total_accounts = active_accounts_df['Amount'].sum()
+        net_cash = total_earnings - total_accounts
+        
+        col1.metric("Monthly Revenue", f"${total_earnings:,.2f}")
+        col2.metric("Monthly Accounts", f"${total_accounts:,.2f}")
+        
+        if net_cash >= 0:
+            col3.metric("Net Cash Flow", f"+${net_cash:,.2f}")
+        else:
+            col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
     else:
-        col3.metric("Net Cash Flow", f"-${abs(net_cash):,.2f}")
+        col1.metric("Monthly Revenue", "$0")
+        col2.metric("Monthly Accounts", "$0")
+        col3.metric("Net Cash Flow", "$0")
     
     # Upcoming Payments from Calendar
     st.subheader("📅 Upcoming Payments")
-    if not st.session_state.payment_calendar.empty:
+    if 'payment_calendar' in st.session_state and not st.session_state.payment_calendar.empty:
         upcoming = st.session_state.payment_calendar[
             (st.session_state.payment_calendar['Due Date'] >= datetime.date.today()) &
             (st.session_state.payment_calendar['Status'] == 'Upcoming')
@@ -242,110 +289,115 @@ with tab1:
 with tab2:
     st.header("Credit Card Management")
     
-    # Data editor for cards
-    edited_cards = st.data_editor(
-        st.session_state.cards_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="cards_editor",
-        column_config={
-            "Card": st.column_config.TextColumn("Card", width="small"),
-            "Bank": st.column_config.TextColumn("Bank", width="medium"),
-            "Limit": st.column_config.NumberColumn("Credit Limit", format="$%.2f"),
-            "Balance": st.column_config.NumberColumn("Current Balance", format="$%.2f")
-        }
-    )
-    st.session_state.cards_df = edited_cards
-    
-    if st.button("Save Cards", key="save_cards"):
-        st.success("Cards saved successfully!")
+    if 'cards_df' in st.session_state and not st.session_state.cards_df.empty:
+        edited_cards = st.data_editor(
+            st.session_state.cards_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="cards_editor",
+            column_config={
+                "Card": st.column_config.TextColumn("Card", width="small"),
+                "Bank": st.column_config.TextColumn("Bank", width="medium"),
+                "Limit": st.column_config.NumberColumn("Credit Limit", format="$%.2f"),
+                "Balance": st.column_config.NumberColumn("Current Balance", format="$%.2f")
+            }
+        )
+        st.session_state.cards_df = edited_cards
+        
+        if st.button("Save Cards", key="save_cards"):
+            st.success("Cards saved successfully!")
+    else:
+        st.warning("No card data available")
 
-# --- ACCOUNTS TAB (formerly BILLS) ---
+# --- ACCOUNTS TAB ---
 with tab3:
     st.header("Account Management")
     st.info("📋 All 13 monthly accounts - Edit as needed")
     
-    # Show account count
-    total_accounts = len(st.session_state.accounts_df)
-    active_accounts_count = len(st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes'])
-    st.write(f"**Total Accounts:** {total_accounts} | **Active Accounts:** {active_accounts_count}")
-    
-    # Data editor for accounts
-    edited_accounts = st.data_editor(
-        st.session_state.accounts_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="accounts_editor",
-        column_config={
-            "Account Name": st.column_config.TextColumn("Account Name", width="medium"),
-            "Amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
-            "Due Day": st.column_config.NumberColumn("Due Day", min_value=1, max_value=31, step=1),
-            "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
-            "Category": st.column_config.TextColumn("Category", width="small"),
-            "Late Fee": st.column_config.NumberColumn("Late Fee ($)", format="$%.2f"),
-            "Grace Days": st.column_config.NumberColumn("Grace Days", min_value=0),
-            "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
-            "Notification": st.column_config.SelectboxColumn("Notification", options=['Yes', 'No']),
-            "Active": st.column_config.SelectboxColumn("Active", options=['Yes', 'No'])
-        }
-    )
-    st.session_state.accounts_df = edited_accounts
-    
-    # Update payment calendar when accounts change
-    current_date = datetime.datetime.now()
-    st.session_state.payment_calendar = create_payment_calendar(current_date.month, current_date.year)
-    
-    # Summary statistics for accounts
-    st.markdown("---")
-    st.subheader("📊 Account Summary")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    active_accounts = edited_accounts[edited_accounts['Active'] == 'Yes']
-    inactive_accounts = edited_accounts[edited_accounts['Active'] == 'No']
-    
-    total_active = active_accounts['Amount'].sum()
-    total_inactive = inactive_accounts['Amount'].sum()
-    
-    col1.metric("Total Active Accounts", f"${total_active:,.2f}")
-    col2.metric("Total Inactive Accounts", f"${total_inactive:,.2f}")
-    col3.metric("Number Active", f"{len(active_accounts)}")
-    col4.metric("Number Inactive", f"{len(inactive_accounts)}")
-    
-    # Late fee exposure
-    st.subheader("⚠️ Late Fee Exposure")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Late Fee Risk", f"${active_accounts['Late Fee'].sum():,.2f}")
-    col2.metric("Accounts with Late Fees", f"{len(active_accounts[active_accounts['Late Fee'] > 0])}")
-    col3.metric("Avg Late Fee", f"${active_accounts[active_accounts['Late Fee'] > 0]['Late Fee'].mean():,.2f}" if len(active_accounts[active_accounts['Late Fee'] > 0]) > 0 else "$0")
-    
-    # Auto-pay summary
-    st.subheader("🤖 Auto-Pay Status")
-    col1, col2 = st.columns(2)
-    auto_pay_count = len(active_accounts[active_accounts['Auto Pay'] == 'Yes'])
-    col1.metric("Accounts on Auto-Pay", f"{auto_pay_count}")
-    col2.metric("Manual Payments", f"{len(active_accounts) - auto_pay_count}")
-    
-    # Accounts by category
-    with st.expander("📊 Accounts by Category"):
-        category_summary = active_accounts.groupby('Category').agg({
-            'Amount': ['sum', 'count']
-        }).round(2)
-        category_summary.columns = ['Total Amount', 'Number of Accounts']
-        category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(category_summary, use_container_width=True)
-    
-    # Accounts by card
-    with st.expander("💳 Accounts by Card"):
-        card_summary = active_accounts.groupby('Pay Via').agg({
-            'Amount': ['sum', 'count']
-        }).round(2)
-        card_summary.columns = ['Total Amount', 'Number of Accounts']
-        card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
-        st.dataframe(card_summary, use_container_width=True)
-    
-    if st.button("Save Accounts", key="save_accounts"):
-        st.success("Accounts saved successfully!")
+    if 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty:
+        # Show account count
+        total_accounts = len(st.session_state.accounts_df)
+        active_accounts_count = len(st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes'])
+        st.write(f"**Total Accounts:** {total_accounts} | **Active Accounts:** {active_accounts_count}")
+        
+        # Data editor for accounts
+        edited_accounts = st.data_editor(
+            st.session_state.accounts_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="accounts_editor",
+            column_config={
+                "Account Name": st.column_config.TextColumn("Account Name", width="medium"),
+                "Amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
+                "Due Day": st.column_config.NumberColumn("Due Day", min_value=1, max_value=31, step=1),
+                "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
+                "Category": st.column_config.TextColumn("Category", width="small"),
+                "Late Fee": st.column_config.NumberColumn("Late Fee ($)", format="$%.2f"),
+                "Grace Days": st.column_config.NumberColumn("Grace Days", min_value=0),
+                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
+                "Notification": st.column_config.SelectboxColumn("Notification", options=['Yes', 'No']),
+                "Active": st.column_config.SelectboxColumn("Active", options=['Yes', 'No'])
+            }
+        )
+        st.session_state.accounts_df = edited_accounts
+        
+        # Update payment calendar when accounts change
+        current_date = datetime.datetime.now()
+        st.session_state.payment_calendar = create_payment_calendar_safe(current_date.month, current_date.year)
+        
+        # Summary statistics for accounts
+        st.markdown("---")
+        st.subheader("📊 Account Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        active_accounts = edited_accounts[edited_accounts['Active'] == 'Yes']
+        inactive_accounts = edited_accounts[edited_accounts['Active'] == 'No']
+        
+        total_active = active_accounts['Amount'].sum()
+        total_inactive = inactive_accounts['Amount'].sum()
+        
+        col1.metric("Total Active Accounts", f"${total_active:,.2f}")
+        col2.metric("Total Inactive Accounts", f"${total_inactive:,.2f}")
+        col3.metric("Number Active", f"{len(active_accounts)}")
+        col4.metric("Number Inactive", f"{len(inactive_accounts)}")
+        
+        # Late fee exposure
+        st.subheader("⚠️ Late Fee Exposure")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Late Fee Risk", f"${active_accounts['Late Fee'].sum():,.2f}")
+        col2.metric("Accounts with Late Fees", f"{len(active_accounts[active_accounts['Late Fee'] > 0])}")
+        col3.metric("Avg Late Fee", f"${active_accounts[active_accounts['Late Fee'] > 0]['Late Fee'].mean():,.2f}" if len(active_accounts[active_accounts['Late Fee'] > 0]) > 0 else "$0")
+        
+        # Auto-pay summary
+        st.subheader("🤖 Auto-Pay Status")
+        col1, col2 = st.columns(2)
+        auto_pay_count = len(active_accounts[active_accounts['Auto Pay'] == 'Yes'])
+        col1.metric("Accounts on Auto-Pay", f"{auto_pay_count}")
+        col2.metric("Manual Payments", f"{len(active_accounts) - auto_pay_count}")
+        
+        # Accounts by category
+        with st.expander("📊 Accounts by Category"):
+            category_summary = active_accounts.groupby('Category').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            category_summary.columns = ['Total Amount', 'Number of Accounts']
+            category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(category_summary, use_container_width=True)
+        
+        # Accounts by card
+        with st.expander("💳 Accounts by Card"):
+            card_summary = active_accounts.groupby('Pay Via').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            card_summary.columns = ['Total Amount', 'Number of Accounts']
+            card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(card_summary, use_container_width=True)
+        
+        if st.button("Save Accounts", key="save_accounts"):
+            st.success("Accounts saved successfully!")
+    else:
+        st.warning("No account data available")
 
 # --- PAYMENT CALENDAR TAB ---
 with tab4:
@@ -368,7 +420,7 @@ with tab4:
     
     # Update calendar when month/year changes
     if st.button("📅 Load Month", key="load_month"):
-        st.session_state.payment_calendar = create_payment_calendar(selected_month, selected_year)
+        st.session_state.payment_calendar = create_payment_calendar_safe(selected_month, selected_year)
         st.rerun()
     
     # Notification Settings
@@ -406,23 +458,11 @@ with tab4:
         if st.button("Save Notification Settings"):
             st.success("Notification settings saved!")
             # Recreate calendar to update notification dates
-            st.session_state.payment_calendar = create_payment_calendar(selected_month, selected_year)
+            st.session_state.payment_calendar = create_payment_calendar_safe(selected_month, selected_year)
             st.rerun()
     
     # Display payment calendar
-    if not st.session_state.payment_calendar.empty:
-        # Add color coding for due dates
-        def color_due_date(row):
-            days_until = (row['Due Date'] - datetime.date.today()).days
-            if row['Status'] == 'Paid':
-                return ['background-color: #28a74520'] * len(row)
-            elif days_until < 0:
-                return ['background-color: #dc354520'] * len(row)  # Past due
-            elif days_until <= st.session_state.notification_settings['days_before_due']:
-                return ['background-color: #ffc10720'] * len(row)  # Approaching due
-            return [''] * len(row)
-        
-        # Editable calendar
+    if 'payment_calendar' in st.session_state and not st.session_state.payment_calendar.empty:
         st.subheader(f"Payment Schedule - {calendar.month_name[selected_month]} {selected_year}")
         
         edited_calendar = st.data_editor(
@@ -450,7 +490,7 @@ with tab4:
             hide_index=True
         )
         
-        # Update accounts when calendar changes
+        # Update calendar when edited
         if not edited_calendar.equals(st.session_state.payment_calendar):
             st.session_state.payment_calendar = edited_calendar
             st.rerun()
@@ -490,12 +530,6 @@ with tab4:
                 )
         else:
             st.info("No upcoming notifications")
-        
-        # Mark as paid button
-        if st.button("✅ Mark Selected as Paid"):
-            # This would need checkbox selection - simplified version
-            st.info("Select rows and mark status as 'Paid' in the editor")
-    
     else:
         st.info("No active accounts to display in calendar")
 
@@ -528,110 +562,113 @@ with tab5:
             st.rerun()
     
     # Data editor for revenue
-    edited_revenue = st.data_editor(
-        st.session_state.revenue_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="revenue_editor",
-        column_config={
-            "Day": st.column_config.TextColumn("Day", width="small"),
-            "Date": st.column_config.TextColumn("Date", width="small"),
-            "Hours": st.column_config.NumberColumn(
-                "Hours", 
-                min_value=0.0,
-                max_value=24.0,
-                step=0.01,
-                format="%.2f"
-            ),
-            "Earnings": st.column_config.NumberColumn(
-                "Earnings ($)", 
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Goal": st.column_config.NumberColumn(
-                "Goal ($)", 
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Difference": st.column_config.NumberColumn(
-                "Diff ($)", 
-                disabled=True, 
-                format="$%.2f"
-            ),
-            "Status": st.column_config.TextColumn(
-                "Status", 
-                disabled=True
-            )
-        },
-        hide_index=True
-    )
-    
-    # Auto-update calculations when data changes
-    if 'last_revenue_state' not in st.session_state:
-        st.session_state.last_revenue_state = edited_revenue.to_dict()
-    else:
-        if edited_revenue.to_dict() != st.session_state.last_revenue_state:
-            edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
-            edited_revenue['Status'] = edited_revenue['Difference'].apply(
-                lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
-            )
-            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-            if len(st.session_state.revenue_history) > 10:
-                st.session_state.revenue_history.pop(0)
-            st.session_state.revenue_df = edited_revenue
+    if 'revenue_df' in st.session_state and not st.session_state.revenue_df.empty:
+        edited_revenue = st.data_editor(
+            st.session_state.revenue_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="revenue_editor",
+            column_config={
+                "Day": st.column_config.TextColumn("Day", width="small"),
+                "Date": st.column_config.TextColumn("Date", width="small"),
+                "Hours": st.column_config.NumberColumn(
+                    "Hours", 
+                    min_value=0.0,
+                    max_value=24.0,
+                    step=0.01,
+                    format="%.2f"
+                ),
+                "Earnings": st.column_config.NumberColumn(
+                    "Earnings ($)", 
+                    min_value=0.0,
+                    step=0.01,
+                    format="$%.2f"
+                ),
+                "Goal": st.column_config.NumberColumn(
+                    "Goal ($)", 
+                    min_value=0.0,
+                    step=0.01,
+                    format="$%.2f"
+                ),
+                "Difference": st.column_config.NumberColumn(
+                    "Diff ($)", 
+                    disabled=True, 
+                    format="$%.2f"
+                ),
+                "Status": st.column_config.TextColumn(
+                    "Status", 
+                    disabled=True
+                )
+            },
+            hide_index=True
+        )
+        
+        # Auto-update calculations
+        if 'last_revenue_state' not in st.session_state:
             st.session_state.last_revenue_state = edited_revenue.to_dict()
-    
-    # Summary section
-    st.markdown("---")
-    st.subheader("📊 Summary")
-    
-    total_hours = edited_revenue['Hours'].sum()
-    total_earnings = edited_revenue['Earnings'].sum()
-    total_goal = edited_revenue['Goal'].sum()
-    total_diff = total_earnings - total_goal
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Hours", f"{total_hours:.2f}")
-    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-    col3.metric("Total Goal", f"${total_goal:,.2f}")
-    
-    if total_diff >= 0:
-        col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
+        else:
+            if edited_revenue.to_dict() != st.session_state.last_revenue_state:
+                edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
+                edited_revenue['Status'] = edited_revenue['Difference'].apply(
+                    lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal'
+                )
+                st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+                if len(st.session_state.revenue_history) > 10:
+                    st.session_state.revenue_history.pop(0)
+                st.session_state.revenue_df = edited_revenue
+                st.session_state.last_revenue_state = edited_revenue.to_dict()
+        
+        # Summary section
+        st.markdown("---")
+        st.subheader("📊 Summary")
+        
+        total_hours = edited_revenue['Hours'].sum()
+        total_earnings = edited_revenue['Earnings'].sum()
+        total_goal = edited_revenue['Goal'].sum()
+        total_diff = total_earnings - total_goal
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Hours", f"{total_hours:.2f}")
+        col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+        col3.metric("Total Goal", f"${total_goal:,.2f}")
+        
+        if total_diff >= 0:
+            col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
+        else:
+            col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
+        
+        days_above = len(edited_revenue[edited_revenue['Earnings'] >= edited_revenue['Goal']])
+        days_below = len(edited_revenue[edited_revenue['Earnings'] < edited_revenue['Goal']])
+        success_rate = (days_above / len(edited_revenue) * 100) if len(edited_revenue) > 0 else 0
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Days Above Goal", f"{days_above}")
+        col2.metric("Days Below Goal", f"{days_below}")
+        col3.metric("Success Rate", f"{success_rate:.1f}%")
+        
+        # Add Week button
+        if st.button("📅 Add Week", key="add_week"):
+            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+            
+            days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            current_date = datetime.datetime.now()
+            
+            week_rows = []
+            for i, day in enumerate(days):
+                week_date = current_date + datetime.timedelta(days=i)
+                week_rows.append({
+                    'Day': day,
+                    'Date': week_date.strftime("%Y-%m-%d"),
+                    'Hours': 0.0,
+                    'Earnings': 0.0,
+                    'Goal': 175.0
+                })
+            
+            week_df = pd.DataFrame(week_rows)
+            week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
+            week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+            
+            st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
+            st.rerun()
     else:
-        col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
-    
-    days_above = len(edited_revenue[edited_revenue['Earnings'] >= edited_revenue['Goal']])
-    days_below = len(edited_revenue[edited_revenue['Earnings'] < edited_revenue['Goal']])
-    success_rate = (days_above / len(edited_revenue) * 100) if len(edited_revenue) > 0 else 0
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Days Above Goal", f"{days_above}")
-    col2.metric("Days Below Goal", f"{days_below}")
-    col3.metric("Success Rate", f"{success_rate:.1f}%")
-    
-    # Add Week button
-    if st.button("📅 Add Week", key="add_week"):
-        st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-        
-        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        current_date = datetime.datetime.now()
-        
-        week_rows = []
-        for i, day in enumerate(days):
-            week_date = current_date + datetime.timedelta(days=i)
-            week_rows.append({
-                'Day': day,
-                'Date': week_date.strftime("%Y-%m-%d"),
-                'Hours': 0.0,
-                'Earnings': 0.0,
-                'Goal': 175.0
-            })
-        
-        week_df = pd.DataFrame(week_rows)
-        week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
-        week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-        
-        st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
-        st.rerun()
+        st.warning("No revenue data available")
