@@ -10,6 +10,16 @@ st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 def init_session_state():
     """Initialize all session state variables"""
     
+    # Initialize notification settings FIRST (before anything that uses them)
+    if 'notification_settings' not in st.session_state:
+        st.session_state.notification_settings = {
+            'email_notifications': False,
+            'sms_notifications': False,
+            'days_before_due': 3,
+            'notification_email': '',
+            'notification_phone': ''
+        }
+    
     # Cards data
     if 'cards_df' not in st.session_state:
         st.session_state.cards_df = pd.DataFrame({
@@ -48,22 +58,13 @@ def init_session_state():
         }
         st.session_state.accounts_df = pd.DataFrame(accounts_data)
     
-    # Payment Calendar
+    # Payment Calendar - create AFTER accounts_df and notification_settings are initialized
     if 'payment_calendar' not in st.session_state:
         # Create initial payment calendar
-        current_month = datetime.datetime.now().month
-        current_year = datetime.datetime.now().year
+        current_date = datetime.datetime.now()
+        current_month = current_date.month
+        current_year = current_date.year
         st.session_state.payment_calendar = create_payment_calendar(current_month, current_year)
-    
-    # Notification settings
-    if 'notification_settings' not in st.session_state:
-        st.session_state.notification_settings = {
-            'email_notifications': False,
-            'sms_notifications': False,
-            'days_before_due': 3,
-            'notification_email': '',
-            'notification_phone': ''
-        }
     
     # Revenue data
     if 'revenue_df' not in st.session_state:
@@ -86,7 +87,15 @@ def init_session_state():
 def create_payment_calendar(month, year):
     """Create a payment calendar for the specified month"""
     # Get active accounts
-    active_accounts = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
+    if 'accounts_df' in st.session_state and not st.session_state.accounts_df.empty:
+        active_accounts = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
+    else:
+        return pd.DataFrame()
+    
+    # Get notification settings with safe default
+    days_before_due = 3
+    if 'notification_settings' in st.session_state:
+        days_before_due = st.session_state.notification_settings.get('days_before_due', 3)
     
     # Create calendar entries
     calendar_entries = []
@@ -100,7 +109,7 @@ def create_payment_calendar(month, year):
         due_date = datetime.date(year, month, due_day)
         
         # Calculate notification date
-        notification_date = due_date - datetime.timedelta(days=st.session_state.notification_settings['days_before_due'])
+        notification_date = due_date - datetime.timedelta(days=days_before_due)
         
         calendar_entries.append({
             'Account': account['Account Name'],
@@ -207,22 +216,25 @@ with tab1:
     
     # Upcoming Payments from Calendar
     st.subheader("📅 Upcoming Payments")
-    upcoming = st.session_state.payment_calendar[
-        (st.session_state.payment_calendar['Due Date'] >= datetime.date.today()) &
-        (st.session_state.payment_calendar['Status'] == 'Upcoming')
-    ].head(5)
-    
-    if not upcoming.empty:
-        for _, payment in upcoming.iterrows():
-            days_until = (payment['Due Date'] - datetime.date.today()).days
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-            col1.write(f"**{payment['Account']}**")
-            col2.write(f"${payment['Amount']:,.2f}")
-            col3.write(f"Due: {payment['Due Date'].strftime('%m/%d')}")
-            if days_until <= st.session_state.notification_settings['days_before_due']:
-                col4.warning(f"⚠️ {days_until} days")
-            else:
-                col4.write(f"{days_until} days")
+    if not st.session_state.payment_calendar.empty:
+        upcoming = st.session_state.payment_calendar[
+            (st.session_state.payment_calendar['Due Date'] >= datetime.date.today()) &
+            (st.session_state.payment_calendar['Status'] == 'Upcoming')
+        ].head(5)
+        
+        if not upcoming.empty:
+            for _, payment in upcoming.iterrows():
+                days_until = (payment['Due Date'] - datetime.date.today()).days
+                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                col1.write(f"**{payment['Account']}**")
+                col2.write(f"${payment['Amount']:,.2f}")
+                col3.write(f"Due: {payment['Due Date'].strftime('%m/%d')}")
+                if days_until <= st.session_state.notification_settings['days_before_due']:
+                    col4.warning(f"⚠️ {days_until} days")
+                else:
+                    col4.write(f"{days_until} days")
+        else:
+            st.info("No upcoming payments")
     else:
         st.info("No upcoming payments")
 
