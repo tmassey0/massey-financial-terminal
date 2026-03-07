@@ -2,17 +2,26 @@ import streamlit as st
 import pandas as pd
 import datetime
 import calendar
-import gspread
-from google.oauth2.service_account import Credentials
 import time
+
+# Attempt to import gspread – if it fails, we'll use local storage only
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSHEETS_AVAILABLE = True
+except ImportError:
+    GSHEETS_AVAILABLE = False
+    st.warning("Google Sheets integration not available. Data will not persist across devices.")
 
 # This must be the first Streamlit command
 st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
-# --- GOOGLE SHEETS CONNECTION ---
+# --- GOOGLE SHEETS CONNECTION (only if available) ---
 @st.cache_resource
 def connect_to_gsheets():
     """Connect to Google Sheets using Streamlit Cloud secrets"""
+    if not GSHEETS_AVAILABLE:
+        return None
     try:
         scope = ['https://spreadsheets.google.com/feeds',
                  'https://www.googleapis.com/auth/drive']
@@ -47,13 +56,12 @@ def connect_to_gsheets():
         st.error(f"⚠️ Failed to connect to Google Sheets. Using local storage only.")
         return None
 
-# --- AUTO-SAVE FUNCTION ---
+# --- AUTO-SAVE FUNCTION (only if connected) ---
 def auto_save_to_gsheets(sheet_name, df):
     """Automatically save DataFrame to Google Sheets"""
+    if st.session_state.spreadsheet is None:
+        return False
     try:
-        if st.session_state.spreadsheet is None:
-            return False
-        
         # Get or create worksheet
         try:
             worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
@@ -79,16 +87,14 @@ def auto_save_to_gsheets(sheet_name, df):
     except Exception as e:
         return False
 
-# --- LOAD DATA FROM GOOGLE SHEETS ---
+# --- LOAD DATA FROM GOOGLE SHEETS (only if connected) ---
 def load_from_gsheets(sheet_name, default_df):
     """Load data from Google Sheets, return DataFrame"""
+    if st.session_state.spreadsheet is None:
+        return default_df
     try:
-        if st.session_state.spreadsheet is None:
-            return default_df
-        
         worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
         data = worksheet.get_all_records()
-        
         if data:
             df = pd.DataFrame(data)
             # Convert numeric columns
@@ -106,9 +112,9 @@ def load_from_gsheets(sheet_name, default_df):
 def init_session_state():
     """Initialize all session state variables"""
     
-    # Connect to Google Sheets
+    # Connect to Google Sheets (if available)
     if 'spreadsheet' not in st.session_state:
-        st.session_state.spreadsheet = connect_to_gsheets()
+        st.session_state.spreadsheet = connect_to_gsheets() if GSHEETS_AVAILABLE else None
         st.session_state.last_save = {}
     
     # Initialize notification settings
@@ -225,18 +231,18 @@ def init_session_state():
     default_ledger_df = pd.DataFrame(default_ledger_data)
     default_ledger_df['Balance'] = default_ledger_df['Debit'].cumsum() - default_ledger_df['Credit'].cumsum()
     
-    # Load data from Google Sheets
+    # Load data from Google Sheets (if available) or use defaults
     if 'cards_df' not in st.session_state:
-        st.session_state.cards_df = load_from_gsheets('Cards', default_cards_df)
+        st.session_state.cards_df = load_from_gsheets('Cards', default_cards_df) if st.session_state.spreadsheet else default_cards_df
     
     if 'accounts_df' not in st.session_state:
-        st.session_state.accounts_df = load_from_gsheets('Accounts', default_accounts_df)
+        st.session_state.accounts_df = load_from_gsheets('Accounts', default_accounts_df) if st.session_state.spreadsheet else default_accounts_df
     
     if 'revenue_df' not in st.session_state:
-        st.session_state.revenue_df = load_from_gsheets('Revenue', default_revenue_df)
+        st.session_state.revenue_df = load_from_gsheets('Revenue', default_revenue_df) if st.session_state.spreadsheet else default_revenue_df
     
     if 'ledger_df' not in st.session_state:
-        st.session_state.ledger_df = load_from_gsheets('Ledger', default_ledger_df)
+        st.session_state.ledger_df = load_from_gsheets('Ledger', default_ledger_df) if st.session_state.spreadsheet else default_ledger_df
     
     # Calendar
     if 'calendar_df' not in st.session_state:
@@ -316,7 +322,7 @@ st.title("🏛️ Strategic Capital Terminal")
 if st.session_state.spreadsheet:
     st.caption("✅ Cloud-synced across all devices - Changes save automatically")
 else:
-    st.caption("⚠️ Local mode only - Data won't persist across devices")
+    st.caption("⚠️ Local mode only - Data will not persist across devices. Configure Google Sheets for sync.")
 
 # Create tabs
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -470,7 +476,8 @@ with tab2:
     # Check if data changed and auto-save
     if not edited_cards.equals(st.session_state.cards_df):
         st.session_state.cards_df = edited_cards
-        auto_save_to_gsheets('Cards', st.session_state.cards_df)
+        if st.session_state.spreadsheet:
+            auto_save_to_gsheets('Cards', st.session_state.cards_df)
 
 # --- ACCOUNTS TAB ---
 with tab3:
@@ -504,7 +511,8 @@ with tab3:
         # Check if data changed and auto-save
         if not edited_accounts.equals(st.session_state.accounts_df):
             st.session_state.accounts_df = edited_accounts
-            auto_save_to_gsheets('Accounts', st.session_state.accounts_df)
+            if st.session_state.spreadsheet:
+                auto_save_to_gsheets('Accounts', st.session_state.accounts_df)
             # Update calendar when accounts change
             current_date = datetime.datetime.now()
             st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
@@ -520,7 +528,8 @@ with tab4:
         if st.button("↩️ Undo", key="undo_revenue"):
             if st.session_state.revenue_history:
                 st.session_state.revenue_df = st.session_state.revenue_history.pop()
-                auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+                if st.session_state.spreadsheet:
+                    auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
                 st.rerun()
     
     with col2:
@@ -530,7 +539,8 @@ with tab4:
             df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
             st.session_state.revenue_df = df
-            auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+            if st.session_state.spreadsheet:
+                auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
             st.rerun()
     
     edited_revenue = st.data_editor(
@@ -553,7 +563,8 @@ with tab4:
     # Check if data changed and auto-save
     if not edited_revenue.equals(st.session_state.revenue_df):
         st.session_state.revenue_df = edited_revenue
-        auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+        if st.session_state.spreadsheet:
+            auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
 
 # --- LEDGER TAB ---
 with tab5:
@@ -577,7 +588,8 @@ with tab5:
             st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
             st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
             st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
-            auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
+            if st.session_state.spreadsheet:
+                auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
             st.rerun()
     
     with col2:
@@ -594,7 +606,8 @@ with tab5:
             st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
             st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
             st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
-            auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
+            if st.session_state.spreadsheet:
+                auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
             st.rerun()
     
     # Date filter
@@ -688,7 +701,8 @@ with tab5:
         edited_ledger = edited_ledger.sort_values('Date')
         edited_ledger['Balance'] = edited_ledger['Debit'].cumsum() - edited_ledger['Credit'].cumsum()
         st.session_state.ledger_df = edited_ledger
-        auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
+        if st.session_state.spreadsheet:
+            auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
     
     # Summary statistics
     st.markdown("---")
@@ -835,6 +849,5 @@ with tab6:
         # Update calendar when edited
         if not edited_calendar.equals(st.session_state.calendar_df):
             st.session_state.calendar_df = edited_calendar
-            # No auto-save for calendar as it's derived from accounts
     else:
         st.info("No active accounts to display in calendar")
