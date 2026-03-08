@@ -1,853 +1,609 @@
-import streamlit as st
-import pandas as pd
-import datetime
-import calendar
-import time
-
-# Attempt to import gspread – if it fails, we'll use local storage only
-try:
-    import gspread
-    from google.oauth2.service_account import Credentials
-    GSHEETS_AVAILABLE = True
-except ImportError:
-    GSHEETS_AVAILABLE = False
-    st.warning("Google Sheets integration not available. Data will not persist across devices.")
-
-# This must be the first Streamlit command
-st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
-
-# --- GOOGLE SHEETS CONNECTION (only if available) ---
-@st.cache_resource
-def connect_to_gsheets():
-    """Connect to Google Sheets using Streamlit Cloud secrets"""
-    if not GSHEETS_AVAILABLE:
-        return None
-    try:
-        scope = ['https://spreadsheets.google.com/feeds',
-                 'https://www.googleapis.com/auth/drive']
-        
-        # Use secrets from Streamlit Cloud
-        credentials = {
-            "type": st.secrets["gsheets"]["type"],
-            "project_id": st.secrets["gsheets"]["project_id"],
-            "private_key_id": st.secrets["gsheets"]["private_key_id"],
-            "private_key": st.secrets["gsheets"]["private_key"],
-            "client_email": st.secrets["gsheets"]["client_email"],
-            "client_id": st.secrets["gsheets"]["client_id"],
-            "auth_uri": st.secrets["gsheets"]["auth_uri"],
-            "token_uri": st.secrets["gsheets"]["token_uri"],
-            "auth_provider_x509_cert_url": st.secrets["gsheets"]["auth_provider_x509_cert_url"],
-            "client_x509_cert_url": st.secrets["gsheets"]["client_x509_cert_url"]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>アニメ · 篮球传说 · MJ vs LBJ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        
-        creds = Credentials.from_service_account_info(credentials, scopes=scope)
-        client = gspread.authorize(creds)
-        
-        # Try to open existing spreadsheet or create new one
-        try:
-            spreadsheet = client.open('Strategic Capital Terminal Data')
-        except:
-            spreadsheet = client.create('Strategic Capital Terminal Data')
-            # Share with yourself so you can see the data
-            spreadsheet.share(st.secrets["gsheets"]["client_email"], perm_type='user', role='writer')
-        
-        return spreadsheet
-    except Exception as e:
-        st.error(f"⚠️ Failed to connect to Google Sheets. Using local storage only.")
-        return None
-
-# --- AUTO-SAVE FUNCTION (only if connected) ---
-def auto_save_to_gsheets(sheet_name, df):
-    """Automatically save DataFrame to Google Sheets"""
-    if st.session_state.spreadsheet is None:
-        return False
-    try:
-        # Get or create worksheet
-        try:
-            worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
-        except:
-            worksheet = st.session_state.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
-        
-        # Prepare data for saving
-        df_copy = df.copy()
-        
-        # Convert date columns to string
-        for col in df_copy.columns:
-            if df_copy[col].dtype == 'object' and len(df_copy) > 0:
-                if isinstance(df_copy[col].iloc[0], (datetime.date, datetime.datetime)):
-                    df_copy[col] = df_copy[col].astype(str)
-        
-        # Clear worksheet and update with new data
-        worksheet.clear()
-        worksheet.update([df_copy.columns.values.tolist()] + df_copy.values.tolist())
-        
-        # Update last save time
-        st.session_state.last_save[sheet_name] = time.time()
-        return True
-    except Exception as e:
-        return False
-
-# --- LOAD DATA FROM GOOGLE SHEETS (only if connected) ---
-def load_from_gsheets(sheet_name, default_df):
-    """Load data from Google Sheets, return DataFrame"""
-    if st.session_state.spreadsheet is None:
-        return default_df
-    try:
-        worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
-        data = worksheet.get_all_records()
-        if data:
-            df = pd.DataFrame(data)
-            # Convert numeric columns
-            for col in df.columns:
-                try:
-                    df[col] = pd.to_numeric(df[col], errors='ignore')
-                except:
-                    pass
-            return df
-        return default_df
-    except:
-        return default_df
-
-# Initialize all session state variables
-def init_session_state():
-    """Initialize all session state variables"""
-    
-    # Connect to Google Sheets (if available)
-    if 'spreadsheet' not in st.session_state:
-        st.session_state.spreadsheet = connect_to_gsheets() if GSHEETS_AVAILABLE else None
-        st.session_state.last_save = {}
-    
-    # Initialize notification settings
-    if 'notification_settings' not in st.session_state:
-        st.session_state.notification_settings = {
-            'email_notifications': False,
-            'sms_notifications': False,
-            'days_before_due': 3,
-            'notification_email': '',
-            'notification_phone': ''
+        body {
+            background: linear-gradient(145deg, #0b1a2e 0%, #1a2f3f 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Helvetica', system-ui, sans-serif;
         }
-    
-    # Default dataframes
-    default_cards_df = pd.DataFrame({
-        'Card': ['Card1', 'Card2', 'Card3', 'Card4', 'Card5'],
-        'Bank': ['Navy Federal', 'Indigo 3069', 'Indigo 1448', 'Milestone 5093', 'Destiny 3992'],
-        'Limit': [1500, 500, 1000, 500, 1000],
-        'Balance': [1500.10, 632.81, 599.40, 489.81, 944.27]
-    })
-    
-    default_accounts_data = {
-        'Account Name': [
-            'Storage 1', 'Storage 2', 'Storage 3', 'Storage 4', 
-            'Intuit', 'Cell Phone', 'Car Payment', 'Car Insurance',
-            'Gas/Fuel', 'Groceries', 'Klarna', 'Affirm', 'NTTA'
-        ],
-        'Amount': [478, 109, 180, 98, 75, 80, 785, 0, 200, 400, 45, 30, 600],
-        'Due Day': [1, 1, 1, 1, 20, 5, 24, 10, 15, 1, 15, 20, 15],
-        'Pay Via': [
-            'Card1', 'Card1', 'Card2', 'Card2', 
-            'Card2', 'Card3', 'Card3', 'Card1',
-            'Card4', 'Card3', 'Card2', 'Card5', 'Card5'
-        ],
-        'Category': [
-            'Housing', 'Housing', 'Housing', 'Housing',
-            'Utilities', 'Phone', 'Auto', 'Auto',
-            'Auto', 'Health', 'Entertainment', 'Food', 'Auto'
-        ],
-        'Late Fee': [40, 25, 25, 20, 0, 25, 39, 25, 0, 0, 25, 0, 25],
-        'Grace Days': [5, 5, 5, 5, 0, 0, 10, 10, 0, 0, 0, 0, 30],
-        'Auto Pay': ['No'] * 13,
-        'Notification': ['Yes'] * 13,
-        'Active': ['Yes'] * 13
-    }
-    default_accounts_df = pd.DataFrame(default_accounts_data)
-    
-    default_revenue_data = {
-        'Day': ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        'Date': ['2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05', '2026-03-06', '2026-03-07', '2026-03-08'],
-        'Hours': [8.53, 0, 0, 0, 0, 0, 0],
-        'Earnings': [224.70, 0, 0, 0, 0, 0, 0],
-        'Goal': [150, 150, 150, 150, 150, 150, 150]
-    }
-    default_revenue_df = pd.DataFrame(default_revenue_data)
-    default_revenue_df['Difference'] = default_revenue_df['Earnings'] - default_revenue_df['Goal']
-    default_revenue_df['Status'] = default_revenue_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-    
-    # Default ledger data
-    today = datetime.date.today()
-    default_ledger_data = {
-        'Date': [
-            today - datetime.timedelta(days=10),
-            today - datetime.timedelta(days=9),
-            today - datetime.timedelta(days=8),
-            today - datetime.timedelta(days=7),
-            today - datetime.timedelta(days=6),
-            today - datetime.timedelta(days=5),
-            today - datetime.timedelta(days=4),
-            today - datetime.timedelta(days=3),
-        ],
-        'Description': [
-            'Opening Balance',
-            'Uber Earnings - Week 1',
-            'Gas Station',
-            'Walmart - Groceries',
-            'Uber Earnings - Week 2',
-            'Restaurant',
-            'Amazon - Household',
-            'Pharmacy'
-        ],
-        'Category': [
-            'Balance Forward',
-            'Income',
-            'Transportation',
-            'Shopping',
-            'Income',
-            'Dining',
-            'Shopping',
-            'Health'
-        ],
-        'Debit': [5000.00, 875.50, 0, 0, 942.30, 0, 0, 0],
-        'Credit': [0, 0, 45.67, 89.32, 0, 32.50, 67.89, 15.43],
-        'Payment Method': [
-            'Cash',
-            'Bank Transfer',
-            'Card1',
-            'Card2',
-            'Bank Transfer',
-            'Cash',
-            'Card3',
-            'Card4'
-        ],
-        'Notes': [
-            'Starting balance',
-            'Week 1 earnings',
-            'Filled up tank',
-            'Groceries and supplies',
-            'Week 2 earnings',
-            'Lunch with friends',
-            'Household items',
-            'Prescription'
-        ]
-    }
-    default_ledger_df = pd.DataFrame(default_ledger_data)
-    default_ledger_df['Balance'] = default_ledger_df['Debit'].cumsum() - default_ledger_df['Credit'].cumsum()
-    
-    # Load data from Google Sheets (if available) or use defaults
-    if 'cards_df' not in st.session_state:
-        st.session_state.cards_df = load_from_gsheets('Cards', default_cards_df) if st.session_state.spreadsheet else default_cards_df
-    
-    if 'accounts_df' not in st.session_state:
-        st.session_state.accounts_df = load_from_gsheets('Accounts', default_accounts_df) if st.session_state.spreadsheet else default_accounts_df
-    
-    if 'revenue_df' not in st.session_state:
-        st.session_state.revenue_df = load_from_gsheets('Revenue', default_revenue_df) if st.session_state.spreadsheet else default_revenue_df
-    
-    if 'ledger_df' not in st.session_state:
-        st.session_state.ledger_df = load_from_gsheets('Ledger', default_ledger_df) if st.session_state.spreadsheet else default_ledger_df
-    
-    # Calendar
-    if 'calendar_df' not in st.session_state:
-        current_date = datetime.datetime.now()
-        st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
-    
-    # Revenue history for undo (stays in session only)
-    if 'revenue_history' not in st.session_state:
-        st.session_state.revenue_history = []
-    
-    # Ledger categories
-    if 'ledger_categories' not in st.session_state:
-        st.session_state.ledger_categories = [
-            'Income', 'Balance Forward',
-            'Transportation', 'Shopping', 'Dining', 'Health', 'Entertainment',
-            'Utilities', 'Housing', 'Auto', 'Food', 'Personal Care',
-            'Gifts', 'Education', 'Travel', 'Insurance', 'Subscriptions',
-            'Miscellaneous'
-        ]
-
-def create_calendar_safe(month, year):
-    """Create a calendar with safe error handling"""
-    try:
-        if 'accounts_df' not in st.session_state or st.session_state.accounts_df.empty:
-            return pd.DataFrame()
-        
-        accounts_df = st.session_state.accounts_df
-        if 'Active' not in accounts_df.columns:
-            return pd.DataFrame()
-        
-        active_accounts = accounts_df[accounts_df['Active'] == 'Yes']
-        if active_accounts.empty:
-            return pd.DataFrame()
-        
-        days_before_due = st.session_state.notification_settings.get('days_before_due', 3)
-        
-        calendar_entries = []
-        for _, account in active_accounts.iterrows():
-            try:
-                due_day = account['Due Day']
-                last_day = calendar.monthrange(year, month)[1]
-                if due_day > last_day:
-                    due_day = last_day
-                
-                due_date = datetime.date(year, month, due_day)
-                notification_date = due_date - datetime.timedelta(days=days_before_due)
-                
-                calendar_entries.append({
-                    'Account': account.get('Account Name', 'Unknown'),
-                    'Amount': account.get('Amount', 0),
-                    'Due Date': due_date,
-                    'Pay Via': account.get('Pay Via', ''),
-                    'Category': account.get('Category', ''),
-                    'Late Fee': account.get('Late Fee', 0),
-                    'Auto Pay': account.get('Auto Pay', 'No'),
-                    'Notification': account.get('Notification', 'Yes'),
-                    'Status': 'Upcoming',
-                    'Payment Date': None,
-                    'Notes': '',
-                    'Notify By': notification_date if account.get('Notification') == 'Yes' else None
-                })
-            except:
-                continue
-        
-        if calendar_entries:
-            calendar_df = pd.DataFrame(calendar_entries)
-            return calendar_df.sort_values('Due Date')
-        return pd.DataFrame()
-    except:
-        return pd.DataFrame()
-
-# Call initialization
-init_session_state()
-
-# App title
-st.title("🏛️ Strategic Capital Terminal")
-if st.session_state.spreadsheet:
-    st.caption("✅ Cloud-synced across all devices - Changes save automatically")
-else:
-    st.caption("⚠️ Local mode only - Data will not persist across devices. Configure Google Sheets for sync.")
-
-# Create tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📊 DASHBOARD", 
-    "💳 CARDS", 
-    "📋 ACCOUNTS", 
-    "💰 REVENUE", 
-    "📒 LEDGER", 
-    "📅 CALENDAR"
-])
-
-# --- DASHBOARD TAB ---
-with tab1:
-    st.header("Financial Dashboard")
-    
-    # Overview Section
-    st.subheader("📈 Overview")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    if not st.session_state.cards_df.empty:
-        total_limit = st.session_state.cards_df['Limit'].sum()
-        total_balance = st.session_state.cards_df['Balance'].sum()
-        available = total_limit - total_balance
-        utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-        
-        col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
-        col2.metric("Total Balance", f"${total_balance:,.2f}")
-        col3.metric("Available Credit", f"${available:,.2f}")
-        col4.metric("Utilization", f"{utilization:.1f}%")
-    else:
-        col1.metric("Total Credit Limit", "$0.00")
-        col2.metric("Total Balance", "$0.00")
-        col3.metric("Available Credit", "$0.00")
-        col4.metric("Utilization", "0%")
-    
-    # Revenue Section
-    st.subheader("🚖 Revenue")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    if not st.session_state.revenue_df.empty:
-        total_hours = st.session_state.revenue_df['Hours'].sum()
-        total_earnings = st.session_state.revenue_df['Earnings'].sum()
-        total_goal = st.session_state.revenue_df['Goal'].sum()
-        avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
-        
-        col1.metric("Total Hours", f"{total_hours:.2f}")
-        col2.metric("Total Earnings", f"${total_earnings:,.2f}")
-        col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
-        col4.metric("Avg Hourly", f"${avg_hourly:.2f}")
-    else:
-        col1.metric("Total Hours", "0")
-        col2.metric("Total Earnings", "$0")
-        col3.metric("Goal vs Actual", "$0")
-        col4.metric("Avg Hourly", "$0")
-    
-    # Accounts Section
-    st.subheader("📋 Accounts")
-    col1, col2, col3 = st.columns(3)
-    
-    if not st.session_state.accounts_df.empty:
-        active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
-        total_accounts = active_accounts_df['Amount'].sum()
-        num_active_accounts = len(active_accounts_df)
-        
-        col1.metric("Total Monthly Accounts", f"${total_accounts:,.2f}")
-        col2.metric("Active Accounts", f"{num_active_accounts}")
-        col3.metric("Avg Account Amount", f"${total_accounts/num_active_accounts:,.2f}" if num_active_accounts > 0 else "$0")
-        
-        with st.expander("📋 All Accounts List"):
-            display_accounts = active_accounts_df[['Account Name', 'Amount', 'Due Day', 'Pay Via', 'Category']].copy()
-            display_accounts['Amount'] = display_accounts['Amount'].apply(lambda x: f"${x:,.2f}")
-            st.dataframe(display_accounts, use_container_width=True, hide_index=True)
-        
-        with st.expander("📊 Category Breakdown"):
-            category_totals = active_accounts_df.groupby('Category')['Amount'].sum().reset_index()
-            category_totals.columns = ['Category', 'Total']
-            category_totals = category_totals.sort_values('Total', ascending=False)
-            category_totals['Total'] = category_totals['Total'].apply(lambda x: f"${x:,.2f}")
-            st.dataframe(category_totals, use_container_width=True, hide_index=True)
-    else:
-        col1.metric("Total Monthly Accounts", "$0")
-        col2.metric("Active Accounts", "0")
-        col3.metric("Avg Account Amount", "$0")
-    
-    # LEDGER Section
-    st.subheader("📒 Current Financial Position")
-    col1, col2, col3 = st.columns(3)
-    
-    if not st.session_state.ledger_df.empty:
-        current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
-        
-        current_month = datetime.datetime.now().month
-        current_year = datetime.datetime.now().year
-        month_transactions = st.session_state.ledger_df[
-            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.month == current_month) &
-            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.year == current_year)
-        ]
-        
-        month_income = month_transactions['Debit'].sum()
-        month_expenses = month_transactions['Credit'].sum()
-        
-        col1.metric("Current Balance", f"${current_balance:,.2f}")
-        col2.metric("MTD Income", f"${month_income:,.2f}")
-        col3.metric("MTD Expenses", f"${month_expenses:,.2f}")
-    else:
-        col1.metric("Current Balance", "$0")
-        col2.metric("MTD Income", "$0")
-        col3.metric("MTD Expenses", "$0")
-    
-    # Upcoming Payments
-    st.subheader("📅 Upcoming Payments")
-    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
-        upcoming = st.session_state.calendar_df[
-            (st.session_state.calendar_df['Due Date'] >= datetime.date.today()) &
-            (st.session_state.calendar_df['Status'] == 'Upcoming')
-        ].head(5)
-        
-        if not upcoming.empty:
-            for _, payment in upcoming.iterrows():
-                days_until = (payment['Due Date'] - datetime.date.today()).days
-                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-                col1.write(f"**{payment['Account']}**")
-                col2.write(f"${payment['Amount']:,.2f}")
-                col3.write(f"Due: {payment['Due Date'].strftime('%m/%d')}")
-                if days_until <= st.session_state.notification_settings['days_before_due']:
-                    col4.warning(f"⚠️ {days_until} days")
-                else:
-                    col4.write(f"{days_until} days")
-        else:
-            st.info("No upcoming payments")
-    else:
-        st.info("No upcoming payments")
-
-# --- CARDS TAB ---
-with tab2:
-    st.header("Credit Card Management")
-    
-    edited_cards = st.data_editor(
-        st.session_state.cards_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="cards_editor",
-        column_config={
-            "Card": st.column_config.TextColumn("Card", width="small"),
-            "Bank": st.column_config.TextColumn("Bank", width="medium"),
-            "Limit": st.column_config.NumberColumn("Credit Limit", format="$%.2f"),
-            "Balance": st.column_config.NumberColumn("Current Balance", format="$%.2f")
+        .anime-hoops {
+            background: #1e3b4f;
+            border-radius: 2.5rem 2.5rem 1.5rem 1.5rem;
+            padding: 2rem 2rem 1.8rem 2rem;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.7), 0 0 0 2px #ffb347 inset, 0 0 0 5px #2b5f7a inset;
         }
-    )
-    
-    # Check if data changed and auto-save
-    if not edited_cards.equals(st.session_state.cards_df):
-        st.session_state.cards_df = edited_cards
-        if st.session_state.spreadsheet:
-            auto_save_to_gsheets('Cards', st.session_state.cards_df)
+        .canvas-wrapper {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            border-radius: 1.8rem;
+            overflow: hidden;
+            box-shadow: 0 0 0 4px #f9d27e, 0 20px 30px rgba(0,0,0,0.8);
+        }
+        canvas {
+            display: block;
+            width: 900px;
+            height: 450px;
+            background: #7ccf9f;  /* anime court green */
+            cursor: pointer;
+        }
+        .scoreboard {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 18px 15px 0 15px;
+            color: #faeac6;
+            text-shadow: 3px 3px 0 #1f4d6e, 5px 5px 0 #00000060;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
+        .player-tag {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.6rem;
+            background: #263f4e;
+            padding: 0.7rem 2rem;
+            border-radius: 4rem;
+            border: 3px solid #fec260;
+            box-shadow: 0 8px 0 #0f2c3a;
+        }
+        .mj-tag {
+            background: #be6e46;  /* warm anime accent */
+        }
+        .lbj-tag {
+            background: #b1624b;
+        }
+        .score-display {
+            background: #141c24;
+            border-radius: 2rem;
+            padding: 0.2rem 1.2rem;
+            font-size: 2.5rem;
+            font-family: 'Courier New', monospace;
+            color: #ffd966;
+            border: 3px solid #fff2b5;
+            box-shadow: inset 0 -3px 0 #473d2b;
+        }
+        .anime-badge {
+            background: #ffb703;
+            border-radius: 30px;
+            padding: 0.4rem 1.8rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #082b39;
+            border: 2px solid white;
+            transform: rotate(-1deg);
+            box-shadow: 0 6px 0 #a0661c;
+        }
+        button {
+            background: #fedb9f;
+            border: none;
+            border-radius: 50px;
+            padding: 12px 28px;
+            font-weight: bold;
+            font-size: 1.3rem;
+            color: #113946;
+            border-bottom: 6px solid #af7b3a;
+            border-right: 3px solid #ca984b;
+            transition: 0.08s linear;
+            cursor: pointer;
+            box-shadow: 0 7px 0 #4f3620;
+        }
+        button:active {
+            transform: translateY(5px);
+            border-bottom-width: 2px;
+            box-shadow: 0 2px 0 #4f3620;
+        }
+        .footer-note {
+            text-align: center;
+            color: #ccdde4;
+            margin-top: 16px;
+            font-size: 1.1rem;
+            font-style: italic;
+            background: #183d4b;
+            padding: 8px 20px;
+            border-radius: 40px;
+            display: inline-block;
+            margin-left: auto;
+            margin-right: auto;
+            width: fit-content;
+            border: 2px solid #96cadf;
+        }
+        .sparkle {
+            font-size: 1.6rem;
+            filter: drop-shadow(0 0 6px gold);
+        }
+    </style>
+</head>
+<body>
+<div class="anime-hoops">
+    <div class="canvas-wrapper">
+        <canvas id="battleCourt" width="900" height="450"></canvas>
+    </div>
 
-# --- ACCOUNTS TAB ---
-with tab3:
-    st.header("Account Management")
-    st.info("📋 All 13 monthly accounts - Edit as needed")
-    
-    if not st.session_state.accounts_df.empty:
-        total_accounts = len(st.session_state.accounts_df)
-        active_accounts_count = len(st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes'])
-        st.write(f"**Total Accounts:** {total_accounts} | **Active Accounts:** {active_accounts_count}")
-        
-        edited_accounts = st.data_editor(
-            st.session_state.accounts_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="accounts_editor",
-            column_config={
-                "Account Name": st.column_config.TextColumn("Account Name", width="medium"),
-                "Amount": st.column_config.NumberColumn("Amount ($)", format="$%.2f"),
-                "Due Day": st.column_config.NumberColumn("Due Day", min_value=1, max_value=31, step=1),
-                "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
-                "Category": st.column_config.TextColumn("Category", width="small"),
-                "Late Fee": st.column_config.NumberColumn("Late Fee ($)", format="$%.2f"),
-                "Grace Days": st.column_config.NumberColumn("Grace Days", min_value=0),
-                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
-                "Notification": st.column_config.SelectboxColumn("Notification", options=['Yes', 'No']),
-                "Active": st.column_config.SelectboxColumn("Active", options=['Yes', 'No'])
+    <!-- anime style scoreboard + tags -->
+    <div class="scoreboard">
+        <div class="player-tag mj-tag">
+            <span class="sparkle">✨</span>
+            <span>M·J</span>
+            <span class="score-display" id="mjScore">0</span>
+        </div>
+        <div class="anime-badge">⚡ 黄金一代 ⚡</div>
+        <div class="player-tag lbj-tag">
+            <span class="sparkle">🔥</span>
+            <span>LBJ</span>
+            <span class="score-display" id="lbjScore">0</span>
+        </div>
+    </div>
+
+    <!-- controls + anime flavor -->
+    <div style="display: flex; justify-content: center; margin-top: 22px; gap: 20px; align-items: center;">
+        <button id="resetBtn">🔄 始まり · 重置</button>
+        <span style="color:#ffe2a3; font-weight:500;">⚡ 点击画面 · 加速灵魂 ⚡</span>
+    </div>
+    <div class="footer-note">
+        🏀  anime style · マイケル vs レブロン  🏀
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ==========  canvas & anime context ==========
+        const canvas = document.getElementById('battleCourt');
+        const ctx = canvas.getContext('2d');
+
+        // score elements
+        const mjScoreSpan = document.getElementById('mjScore');
+        const lbjScoreSpan = document.getElementById('lbjScore');
+
+        // dimensions
+        const W = 900, H = 450;
+        // player base positions
+        const mjPos = { x: 200, y: 280 };   // left side (Michael)
+        const lbjPos = { x: 700, y: 280 };  // right side (LeBron)
+
+        // ball state
+        let ball = {
+            x: mjPos.x + 30,
+            y: mjPos.y - 30,
+            vx: 2.2,          // horizontal speed
+            vy: 0,
+            bouncePhase: 0,
+            radius: 16,
+            owner: 'mj'       // 'mj' or 'lbj' (who last touched)
+        };
+
+        // scores
+        let mjScore = 0;
+        let lbjScore = 0;
+
+        // animation control
+        let animFrame = null;
+        let lastTimestamp = 0;
+        // speed multiplier (tap canvas to boost)
+        let speedFactor = 1.0;
+        const BASE_SPEED = 2.2;
+
+        // ==========  draw anime-styled players ==========
+        function drawMJ(x, y) {
+            // skin tone (warm brown, anime highlight)
+            ctx.save();
+            // head (large expressive anime style)
+            ctx.beginPath();
+            ctx.ellipse(x, y-42, 24, 26, 0, 0, Math.PI*2);  // head
+            ctx.fillStyle = '#8d5524';  // base skin
+            ctx.fill();
+            ctx.strokeStyle = '#3e2a1f';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // shiny anime eyes (big, determined)
+            ctx.save();
+            ctx.shadowColor = '#fffde7';
+            ctx.shadowBlur = 10;
+            // left eye
+            ctx.beginPath();
+            ctx.ellipse(x-10, y-50, 5, 8, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.fillStyle = '#2b1e12';
+            ctx.beginPath();
+            ctx.arc(x-13, y-53, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x-14, y-55, 1.2, 0, Math.PI*2);
+            ctx.fill();
+
+            // right eye
+            ctx.beginPath();
+            ctx.ellipse(x+10, y-50, 5, 8, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.fillStyle = '#2b1e12';
+            ctx.beginPath();
+            ctx.arc(x+7, y-53, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x+6, y-55, 1.2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+
+            // iconic mj smile / determined mouth
+            ctx.beginPath();
+            ctx.strokeStyle = '#5a3f2b';
+            ctx.lineWidth = 2;
+            ctx.arc(x, y-40, 9, 0.1, Math.PI - 0.1);
+            ctx.stroke();
+
+            // ears
+            ctx.fillStyle = '#8d5524';
+            ctx.beginPath();
+            ctx.ellipse(x-24, y-42, 5, 8, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x+24, y-42, 5, 8, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // bald head with fade line (anime effect)
+            ctx.beginPath();
+            ctx.strokeStyle = '#c57e4a';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([5, 6]);
+            ctx.arc(x, y-54, 20, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+            ctx.setLineDash([]); // reset
+
+            // body (jersey)
+            ctx.fillStyle = '#c41e3a';  // red like bulls
+            ctx.beginPath();
+            ctx.ellipse(x, y+8, 28, 35, 0, 0, Math.PI*2);
+            ctx.fill();
+            // number 23
+            ctx.font = 'bold 22px "Courier New", monospace';
+            ctx.fillStyle = '#f9eec1';
+            ctx.shadowColor = '#440000';
+            ctx.shadowBlur = 8;
+            ctx.fillText('23', x-19, y+24);
+            ctx.shadowBlur = 0;
+
+            // shorts
+            ctx.fillStyle = '#b22222';
+            ctx.beginPath();
+            ctx.ellipse(x, y+45, 30, 20, 0, 0, Math.PI*2);
+            ctx.fill();
+            // legs
+            ctx.strokeStyle = '#6b4226';
+            ctx.lineWidth = 9;
+            ctx.beginPath();
+            ctx.moveTo(x-12, y+58);
+            ctx.lineTo(x-20, y+90);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x+12, y+58);
+            ctx.lineTo(x+20, y+90);
+            ctx.stroke();
+
+            // shoes
+            ctx.fillStyle = '#111111';
+            ctx.beginPath();
+            ctx.ellipse(x-24, y+92, 8, 4, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x+20, y+92, 8, 4, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // sweat effect (anime)
+            ctx.fillStyle = '#add8e6';
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            ctx.arc(x-35, y-50, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        function drawLBJ(x, y) {
+            ctx.save();
+            // skin tone (deep brown)
+            ctx.fillStyle = '#6b4226';
+            ctx.beginPath();
+            ctx.ellipse(x, y-42, 26, 28, 0, 0, Math.PI*2);  // head
+            ctx.fill();
+            ctx.strokeStyle = '#3e2a1f';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // anime eyes (intense)
+            ctx.save();
+            ctx.shadowColor = 'white';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.ellipse(x-12, y-50, 6, 9, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fill();
+            ctx.fillStyle = '#1f120a';
+            ctx.beginPath();
+            ctx.arc(x-15, y-53, 3.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x-16, y-55, 1.5, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.ellipse(x+12, y-50, 6, 9, 0, 0, Math.PI*2);
+            ctx.fillStyle = '#f0f0f0';
+            ctx.fill();
+            ctx.fillStyle = '#1f120a';
+            ctx.beginPath();
+            ctx.arc(x+9, y-53, 3.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x+8, y-55, 1.5, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+
+            // lebron beard (anime style stubble)
+            ctx.fillStyle = '#4a3320';
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.ellipse(x, y-34, 12, 6, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // headband
+            ctx.fillStyle = '#ff4d4d';
+            ctx.beginPath();
+            ctx.ellipse(x, y-58, 22, 7, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // ears
+            ctx.fillStyle = '#6b4226';
+            ctx.beginPath();
+            ctx.ellipse(x-26, y-44, 5, 9, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x+26, y-44, 5, 9, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // jersey (blue and gold)
+            ctx.fillStyle = '#2d4f7c';
+            ctx.beginPath();
+            ctx.ellipse(x, y+8, 30, 37, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#f4c542';
+            ctx.font = 'bold 22px "Courier New", monospace';
+            ctx.fillText('23', x-19, y+24);
+
+            // shorts
+            ctx.fillStyle = '#1f3a5f';
+            ctx.beginPath();
+            ctx.ellipse(x, y+45, 32, 21, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // legs
+            ctx.strokeStyle = '#4f311b';
+            ctx.lineWidth = 10;
+            ctx.beginPath();
+            ctx.moveTo(x-15, y+58);
+            ctx.lineTo(x-24, y+92);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x+15, y+58);
+            ctx.lineTo(x+24, y+92);
+            ctx.stroke();
+
+            // shoes
+            ctx.fillStyle = '#222222';
+            ctx.beginPath();
+            ctx.ellipse(x-28, y+94, 9, 5, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x+24, y+94, 9, 5, 0, 0, Math.PI*2);
+            ctx.fill();
+
+            // anime spark (determination)
+            ctx.fillStyle = '#ffdb9f';
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.arc(x+35, y-75, 12, 0, Math.PI*2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        // draw basketball
+        function drawBall(x, y, r) {
+            ctx.save();
+            ctx.shadowColor = '#222222';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fillStyle = '#d87c1c';
+            ctx.fill();
+            ctx.strokeStyle = '#2b1e0e';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            // black curved lines
+            ctx.beginPath();
+            ctx.moveTo(x - r+3, y - r+3);
+            ctx.lineTo(x + r-4, y + r-4);
+            ctx.strokeStyle = '#2c2c2c';
+            ctx.lineWidth = 2.8;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x + r-4, y - r+3);
+            ctx.lineTo(x - r+3, y + r-4);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // draw court with anime vibes
+        function drawCourt() {
+            // gradient floor
+            const grd = ctx.createLinearGradient(0, 0, 0, H);
+            grd.addColorStop(0, '#a7e0b0');
+            grd.addColorStop(1, '#479f7a');
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, W, H);
+
+            // key lines
+            ctx.strokeStyle = '#f8f0d5';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([15, 20]);
+            ctx.beginPath();
+            ctx.moveTo(0, H/2+20);
+            ctx.lineTo(W, H/2+20);
+            ctx.stroke();
+
+            ctx.setLineDash([]);
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = '#ebd6b0';
+            // center circle
+            ctx.beginPath();
+            ctx.arc(W/2, H-110, 60, 0, Math.PI*2);
+            ctx.stroke();
+
+            // three point lines (anime curvy)
+            ctx.beginPath();
+            ctx.strokeStyle = '#c9af7b';
+            ctx.lineWidth = 3;
+            ctx.ellipse(150, H-150, 70, 40, 0, 0, Math.PI*2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.ellipse(750, H-150, 70, 40, 0, 0, Math.PI*2);
+            ctx.stroke();
+
+            // anime glow spots
+            ctx.fillStyle = '#fef7d6';
+            ctx.globalAlpha = 0.4;
+            for (let i=0; i<3; i++) {
+                ctx.beginPath();
+                ctx.arc(150 + i*300, H-100, 12, 0, Math.PI*2);
+                ctx.fill();
             }
-        )
-        
-        # Check if data changed and auto-save
-        if not edited_accounts.equals(st.session_state.accounts_df):
-            st.session_state.accounts_df = edited_accounts
-            if st.session_state.spreadsheet:
-                auto_save_to_gsheets('Accounts', st.session_state.accounts_df)
-            # Update calendar when accounts change
-            current_date = datetime.datetime.now()
-            st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
+            ctx.globalAlpha = 1;
+        }
 
-# --- REVENUE TAB ---
-with tab4:
-    st.header("💰 Revenue Tracker")
-    
-    # Action buttons
-    col1, col2, col3 = st.columns([1, 1, 4])
-    
-    with col1:
-        if st.button("↩️ Undo", key="undo_revenue"):
-            if st.session_state.revenue_history:
-                st.session_state.revenue_df = st.session_state.revenue_history.pop()
-                if st.session_state.spreadsheet:
-                    auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
-                st.rerun()
-    
-    with col2:
-        if st.button("🔄 Update", key="update_revenue"):
-            df = st.session_state.revenue_df.copy()
-            df['Difference'] = df['Earnings'] - df['Goal']
-            df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
-            st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
-            st.session_state.revenue_df = df
-            if st.session_state.spreadsheet:
-                auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
-            st.rerun()
-    
-    edited_revenue = st.data_editor(
-        st.session_state.revenue_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="revenue_editor",
-        column_config={
-            "Day": st.column_config.TextColumn("Day", width="small"),
-            "Date": st.column_config.TextColumn("Date", width="small"),
-            "Hours": st.column_config.NumberColumn("Hours", format="%.2f"),
-            "Earnings": st.column_config.NumberColumn("Earnings ($)", format="$%.2f"),
-            "Goal": st.column_config.NumberColumn("Goal ($)", format="$%.2f"),
-            "Difference": st.column_config.NumberColumn("Diff ($)", disabled=True, format="$%.2f"),
-            "Status": st.column_config.TextColumn("Status", disabled=True)
-        },
-        hide_index=True
-    )
-    
-    # Check if data changed and auto-save
-    if not edited_revenue.equals(st.session_state.revenue_df):
-        st.session_state.revenue_df = edited_revenue
-        if st.session_state.spreadsheet:
-            auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+        // ==========  animation & collision ==========
+        function updateBall() {
+            // move ball
+            ball.x += ball.vx * speedFactor;
+            // simple bouncing y (dribble)
+            ball.bouncePhase += 0.15 * speedFactor;
+            ball.y = (ball.owner === 'mj' ? mjPos.y-45 : lbjPos.y-45) + Math.abs(Math.sin(ball.bouncePhase) * 20) - 15;
 
-# --- LEDGER TAB ---
-with tab5:
-    st.header("📒 Accounting Ledger")
-    st.info("Double-Entry Style: Debits (Income In) | Credits (Expenses Out) | Running Balance")
-    
-    # Action buttons
-    col1, col2, col3 = st.columns([1, 1, 4])
-    
-    with col1:
-        if st.button("➕ Income", key="add_income"):
-            new_row = pd.DataFrame({
-                'Date': [datetime.date.today()],
-                'Description': ['New Income'],
-                'Category': ['Income'],
-                'Debit': [0.00],
-                'Credit': [0.00],
-                'Payment Method': ['Bank Transfer'],
-                'Notes': ['']
-            })
-            st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
-            st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
-            st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
-            if st.session_state.spreadsheet:
-                auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
-            st.rerun()
-    
-    with col2:
-        if st.button("💸 Expense", key="add_expense"):
-            new_row = pd.DataFrame({
-                'Date': [datetime.date.today()],
-                'Description': ['New Expense'],
-                'Category': ['Miscellaneous'],
-                'Debit': [0.00],
-                'Credit': [0.00],
-                'Payment Method': ['Cash'],
-                'Notes': ['']
-            })
-            st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
-            st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
-            st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
-            if st.session_state.spreadsheet:
-                auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
-            st.rerun()
-    
-    # Date filter
-    filter_option = st.selectbox(
-        "Filter by",
-        ["All Time", "This Month", "Last Month", "This Year"]
-    )
-    
-    filtered_df = st.session_state.ledger_df.copy()
-    if filter_option == "This Month":
-        current_month = datetime.datetime.now().month
-        current_year = datetime.datetime.now().year
-        filtered_df = filtered_df[
-            (pd.to_datetime(filtered_df['Date']).dt.month == current_month) &
-            (pd.to_datetime(filtered_df['Date']).dt.year == current_year)
-        ]
-    elif filter_option == "Last Month":
-        last_month = datetime.datetime.now().month - 1
-        if last_month == 0:
-            last_month = 12
-        current_year = datetime.datetime.now().year
-        filtered_df = filtered_df[
-            (pd.to_datetime(filtered_df['Date']).dt.month == last_month) &
-            (pd.to_datetime(filtered_df['Date']).dt.year == current_year)
-        ]
-    elif filter_option == "This Year":
-        current_year = datetime.datetime.now().year
-        filtered_df = filtered_df[pd.to_datetime(filtered_df['Date']).dt.year == current_year]
-    
-    # Recalculate balance for filtered view
-    if not filtered_df.empty:
-        filtered_df = filtered_df.sort_values('Date')
-        filtered_df['Balance'] = filtered_df['Debit'].cumsum() - filtered_df['Credit'].cumsum()
-    
-    edited_ledger = st.data_editor(
-        filtered_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="ledger_editor",
-        column_config={
-            "Date": st.column_config.DateColumn(
-                "Date",
-                min_value=datetime.date(2020, 1, 1),
-                max_value=datetime.date(2030, 12, 31),
-                format="MM/DD/YYYY",
-                required=True
-            ),
-            "Description": st.column_config.TextColumn(
-                "Description",
-                width="medium",
-                required=True
-            ),
-            "Category": st.column_config.SelectboxColumn(
-                "Category",
-                width="medium",
-                options=st.session_state.ledger_categories,
-                required=True
-            ),
-            "Debit": st.column_config.NumberColumn(
-                "Debit (Income) $",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Credit": st.column_config.NumberColumn(
-                "Credit (Expense) $",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Payment Method": st.column_config.SelectboxColumn(
-                "Payment Method",
-                width="small",
-                options=['Cash', 'Bank Transfer', 'Card1', 'Card2', 'Card3', 'Card4', 'Card5', 'Debit', 'Other']
-            ),
-            "Notes": st.column_config.TextColumn(
-                "Notes",
-                width="large"
-            ),
-            "Balance": st.column_config.NumberColumn(
-                "Running Balance",
-                disabled=True,
-                format="$%.2f"
-            )
-        },
-        hide_index=True
-    )
-    
-    # Check if data changed and auto-save
-    if not edited_ledger.equals(st.session_state.ledger_df):
-        edited_ledger = edited_ledger.sort_values('Date')
-        edited_ledger['Balance'] = edited_ledger['Debit'].cumsum() - edited_ledger['Credit'].cumsum()
-        st.session_state.ledger_df = edited_ledger
-        if st.session_state.spreadsheet:
-            auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
-    
-    # Summary statistics
-    st.markdown("---")
-    st.subheader("📊 Ledger Summary")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    if not st.session_state.ledger_df.empty:
-        current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
-        total_debits = st.session_state.ledger_df['Debit'].sum()
-        total_credits = st.session_state.ledger_df['Credit'].sum()
-        transaction_count = len(st.session_state.ledger_df)
-        
-        col1.metric("Current Balance", f"${current_balance:,.2f}")
-        col2.metric("Total Income (Debits)", f"${total_debits:,.2f}")
-        col3.metric("Total Expenses (Credits)", f"${total_credits:,.2f}")
-        col4.metric("# of Transactions", f"{transaction_count}")
-        
-        # Income vs Expense breakdown
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("💰 Income by Category")
-            income_summary = st.session_state.ledger_df[st.session_state.ledger_df['Debit'] > 0].groupby('Category').agg({
-                'Debit': ['sum', 'count']
-            }).round(2)
-            if not income_summary.empty:
-                income_summary.columns = ['Total', '# of Transactions']
-                income_summary = income_summary.sort_values('Total', ascending=False)
-                income_summary['Total'] = income_summary['Total'].apply(lambda x: f"${x:,.2f}")
-                st.dataframe(income_summary, use_container_width=True)
-            else:
-                st.info("No income transactions")
-        
-        with col2:
-            st.subheader("💸 Expenses by Category")
-            expense_summary = st.session_state.ledger_df[st.session_state.ledger_df['Credit'] > 0].groupby('Category').agg({
-                'Credit': ['sum', 'count']
-            }).round(2)
-            if not expense_summary.empty:
-                expense_summary.columns = ['Total', '# of Transactions']
-                expense_summary = expense_summary.sort_values('Total', ascending=False)
-                expense_summary['Total'] = expense_summary['Total'].apply(lambda x: f"${x:,.2f}")
-                st.dataframe(expense_summary, use_container_width=True)
-            else:
-                st.info("No expense transactions")
-    else:
-        col1.metric("Current Balance", "$0")
-        col2.metric("Total Income", "$0")
-        col3.metric("Total Expenses", "$0")
-        col4.metric("# of Transactions", "0")
+            // boundary check + scoring / change possession
+            if (ball.x > lbjPos.x - 40 && ball.x < lbjPos.x + 40 && ball.owner === 'mj') {
+                // reached LeBron -> lbj steals? but we count as receive (score for lbj)
+                if (ball.vx > 0) {
+                    lbjScore += 1;
+                    lbjScoreSpan.textContent = lbjScore;
+                    ball.owner = 'lbj';
+                    ball.vx = -BASE_SPEED;  // now go towards mj
+                    ball.x = lbjPos.x - 25;
+                }
+            } else if (ball.x < mjPos.x + 40 && ball.x > mjPos.x - 40 && ball.owner === 'lbj') {
+                if (ball.vx < 0) {
+                    mjScore += 1;
+                    mjScoreSpan.textContent = mjScore;
+                    ball.owner = 'mj';
+                    ball.vx = BASE_SPEED;  // towards lbj
+                    ball.x = mjPos.x + 30;
+                }
+            }
 
-# --- CALENDAR TAB ---
-with tab6:
-    st.header("📅 Editable Calendar")
-    
-    # Month and year selector
-    col1, col2, col3 = st.columns([1, 1, 2])
-    current_date = datetime.datetime.now()
-    
-    with col1:
-        selected_month = st.selectbox(
-            "Month",
-            range(1, 13),
-            index=current_date.month - 1,
-            format_func=lambda x: calendar.month_name[x]
-        )
-    
-    with col2:
-        selected_year = st.number_input("Year", min_value=2024, max_value=2030, value=current_date.year)
-    
-    # Update calendar when month/year changes
-    if st.button("📅 Load Month", key="load_month"):
-        st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
-        st.rerun()
-    
-    # Notification Settings
-    with st.expander("🔔 Notification Settings"):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.notification_settings['email_notifications'] = st.checkbox(
-                "Enable Email Notifications",
-                value=st.session_state.notification_settings['email_notifications']
-            )
-            if st.session_state.notification_settings['email_notifications']:
-                st.session_state.notification_settings['notification_email'] = st.text_input(
-                    "Email Address",
-                    value=st.session_state.notification_settings['notification_email']
-                )
-        
-        with col2:
-            st.session_state.notification_settings['sms_notifications'] = st.checkbox(
-                "Enable SMS Notifications",
-                value=st.session_state.notification_settings['sms_notifications']
-            )
-            if st.session_state.notification_settings['sms_notifications']:
-                st.session_state.notification_settings['notification_phone'] = st.text_input(
-                    "Phone Number",
-                    value=st.session_state.notification_settings['notification_phone']
-                )
-        
-        st.session_state.notification_settings['days_before_due'] = st.slider(
-            "Days Before Due to Notify",
-            min_value=1,
-            max_value=14,
-            value=st.session_state.notification_settings['days_before_due']
-        )
-        
-        if st.button("Save Notification Settings"):
-            st.success("Notification settings saved!")
-            # Recreate calendar to update notification dates
-            st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
-            st.rerun()
-    
-    # Display calendar
-    if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
-        st.subheader(f"Schedule - {calendar.month_name[selected_month]} {selected_year}")
-        
-        edited_calendar = st.data_editor(
-            st.session_state.calendar_df,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="calendar_editor",
-            column_config={
-                "Account": st.column_config.TextColumn("Account", disabled=True),
-                "Amount": st.column_config.NumberColumn("Amount", format="$%.2f", disabled=True),
-                "Due Date": st.column_config.DateColumn("Due Date", disabled=True),
-                "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
-                "Category": st.column_config.TextColumn("Category", width="small", disabled=True),
-                "Late Fee": st.column_config.NumberColumn("Late Fee", format="$%.2f", disabled=True),
-                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
-                "Notification": st.column_config.SelectboxColumn("Notify", options=['Yes', 'No']),
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=['Upcoming', 'Paid', 'Skipped', 'Pending']
-                ),
-                "Payment Date": st.column_config.DateColumn("Payment Date"),
-                "Notes": st.column_config.TextColumn("Notes"),
-                "Notify By": st.column_config.DateColumn("Notify By", disabled=True)
-            },
-            hide_index=True
-        )
-        
-        # Update calendar when edited
-        if not edited_calendar.equals(st.session_state.calendar_df):
-            st.session_state.calendar_df = edited_calendar
-    else:
-        st.info("No active accounts to display in calendar")
+            // keep ball from leaving court horizontally (just in case)
+            if (ball.x < 40) { ball.x = 40; ball.vx = BASE_SPEED; ball.owner='mj';}
+            if (ball.x > W-40) { ball.x = W-40; ball.vx = -BASE_SPEED; ball.owner='lbj';}
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, W, H);
+            drawCourt();
+
+            // draw players
+            drawMJ(mjPos.x, mjPos.y);
+            drawLBJ(lbjPos.x, lbjPos.y);
+
+            // draw ball
+            drawBall(ball.x, ball.y, ball.radius);
+
+            // extra anime FX: speed lines if speedFactor > 1.2
+            if (speedFactor > 1.2) {
+                ctx.save();
+                ctx.strokeStyle = '#fffdd0';
+                ctx.lineWidth = 2;
+                for (let s=0; s<5; s++) {
+                    let xOff = 200 + s*100;
+                    ctx.beginPath();
+                    ctx.moveTo(xOff, 200);
+                    ctx.lineTo(xOff-40, 350);
+                    ctx.strokeStyle = '#ffe68f';
+                    ctx.globalAlpha = 0.5;
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
+        // animation loop
+        function animate() {
+            updateBall();
+            drawScene();
+            animFrame = requestAnimationFrame(animate);
+        }
+
+        // start animation
+        animFrame = requestAnimationFrame(animate);
+
+        // ===  canvas click = speed burst (anime powerup) ===
+        canvas.addEventListener('click', (e) => {
+            speedFactor = 2.4;
+            setTimeout(() => {
+                speedFactor = 1.0;
+            }, 400);
+        });
+
+        // reset button
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            mjScore = 0;
+            lbjScore = 0;
+            mjScoreSpan.textContent = '0';
+            lbjScoreSpan.textContent = '0';
+            ball = {
+                x: mjPos.x + 30,
+                y: mjPos.y - 30,
+                vx: BASE_SPEED,
+                vy: 0,
+                bouncePhase: 0,
+                radius: 16,
+                owner: 'mj'
+            };
+            speedFactor = 1.0;
+        });
+
+        // (optional) adjust speed on window blur? ignore
+        // clean up animation (not critical for demo)
+        window.addEventListener('beforeunload', () => {
+            if (animFrame) cancelAnimationFrame(animFrame);
+        });
+    })();
+</script>
+</body>
+</html>
