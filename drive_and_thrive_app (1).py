@@ -26,7 +26,6 @@ def connect_to_gsheets():
         scope = ['https://spreadsheets.google.com/feeds',
                  'https://www.googleapis.com/auth/drive']
         
-        # Use secrets from Streamlit Cloud
         credentials = {
             "type": st.secrets["gsheets"]["type"],
             "project_id": st.secrets["gsheets"]["project_id"],
@@ -48,7 +47,6 @@ def connect_to_gsheets():
             spreadsheet = client.open('Strategic Capital Terminal Data')
         except:
             spreadsheet = client.create('Strategic Capital Terminal Data')
-            # Share with yourself so you can see the data
             spreadsheet.share(st.secrets["gsheets"]["client_email"], perm_type='user', role='writer')
         
         return spreadsheet
@@ -56,40 +54,31 @@ def connect_to_gsheets():
         st.error(f"⚠️ Failed to connect to Google Sheets. Using local storage only.")
         return None
 
-# --- AUTO-SAVE FUNCTION (only if connected) ---
+# --- AUTO-SAVE FUNCTION ---
 def auto_save_to_gsheets(sheet_name, df):
-    """Automatically save DataFrame to Google Sheets"""
     if st.session_state.spreadsheet is None:
         return False
     try:
-        # Get or create worksheet
         try:
             worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
         except:
             worksheet = st.session_state.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
         
-        # Prepare data for saving
         df_copy = df.copy()
-        
-        # Convert date columns to string
         for col in df_copy.columns:
             if df_copy[col].dtype == 'object' and len(df_copy) > 0:
                 if isinstance(df_copy[col].iloc[0], (datetime.date, datetime.datetime)):
                     df_copy[col] = df_copy[col].astype(str)
         
-        # Clear worksheet and update with new data
         worksheet.clear()
         worksheet.update([df_copy.columns.values.tolist()] + df_copy.values.tolist())
-        
-        # Update last save time
         st.session_state.last_save[sheet_name] = time.time()
         return True
-    except Exception as e:
+    except:
         return False
 
-# --- LOAD DATA FROM GOOGLE SHEETS (only if connected) ---
+# --- LOAD DATA FROM GOOGLE SHEETS ---
 def load_from_gsheets(sheet_name, default_df):
-    """Load data from Google Sheets, return DataFrame"""
     if st.session_state.spreadsheet is None:
         return default_df
     try:
@@ -97,7 +86,6 @@ def load_from_gsheets(sheet_name, default_df):
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            # Convert numeric columns
             for col in df.columns:
                 try:
                     df[col] = pd.to_numeric(df[col], errors='ignore')
@@ -110,14 +98,10 @@ def load_from_gsheets(sheet_name, default_df):
 
 # Initialize all session state variables
 def init_session_state():
-    """Initialize all session state variables"""
-    
-    # Connect to Google Sheets (if available)
     if 'spreadsheet' not in st.session_state:
         st.session_state.spreadsheet = connect_to_gsheets() if GSHEETS_AVAILABLE else None
         st.session_state.last_save = {}
     
-    # Initialize notification settings
     if 'notification_settings' not in st.session_state:
         st.session_state.notification_settings = {
             'email_notifications': False,
@@ -172,7 +156,6 @@ def init_session_state():
     default_revenue_df['Difference'] = default_revenue_df['Earnings'] - default_revenue_df['Goal']
     default_revenue_df['Status'] = default_revenue_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
     
-    # Default ledger data
     today = datetime.date.today()
     default_ledger_data = {
         'Date': [
@@ -231,7 +214,7 @@ def init_session_state():
     default_ledger_df = pd.DataFrame(default_ledger_data)
     default_ledger_df['Balance'] = default_ledger_df['Debit'].cumsum() - default_ledger_df['Credit'].cumsum()
     
-    # Load data from Google Sheets (if available) or use defaults
+    # Load data from Google Sheets (if available)
     if 'cards_df' not in st.session_state:
         st.session_state.cards_df = load_from_gsheets('Cards', default_cards_df) if st.session_state.spreadsheet else default_cards_df
     
@@ -249,7 +232,7 @@ def init_session_state():
         current_date = datetime.datetime.now()
         st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
     
-    # Revenue history for undo (stays in session only)
+    # Revenue history for undo
     if 'revenue_history' not in st.session_state:
         st.session_state.revenue_history = []
     
@@ -264,21 +247,16 @@ def init_session_state():
         ]
 
 def create_calendar_safe(month, year):
-    """Create a calendar with safe error handling"""
     try:
         if 'accounts_df' not in st.session_state or st.session_state.accounts_df.empty:
             return pd.DataFrame()
-        
         accounts_df = st.session_state.accounts_df
         if 'Active' not in accounts_df.columns:
             return pd.DataFrame()
-        
         active_accounts = accounts_df[accounts_df['Active'] == 'Yes']
         if active_accounts.empty:
             return pd.DataFrame()
-        
         days_before_due = st.session_state.notification_settings.get('days_before_due', 3)
-        
         calendar_entries = []
         for _, account in active_accounts.iterrows():
             try:
@@ -286,10 +264,8 @@ def create_calendar_safe(month, year):
                 last_day = calendar.monthrange(year, month)[1]
                 if due_day > last_day:
                     due_day = last_day
-                
                 due_date = datetime.date(year, month, due_day)
                 notification_date = due_date - datetime.timedelta(days=days_before_due)
-                
                 calendar_entries.append({
                     'Account': account.get('Account Name', 'Unknown'),
                     'Amount': account.get('Amount', 0),
@@ -306,7 +282,6 @@ def create_calendar_safe(month, year):
                 })
             except:
                 continue
-        
         if calendar_entries:
             calendar_df = pd.DataFrame(calendar_entries)
             return calendar_df.sort_values('Due Date')
@@ -314,40 +289,28 @@ def create_calendar_safe(month, year):
     except:
         return pd.DataFrame()
 
-# Call initialization
 init_session_state()
 
-# App title
 st.title("🏛️ Strategic Capital Terminal")
 if st.session_state.spreadsheet:
     st.caption("✅ Cloud-synced across all devices - Changes save automatically")
 else:
     st.caption("⚠️ Local mode only - Data will not persist across devices. Configure Google Sheets for sync.")
 
-# Create tabs
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "📊 DASHBOARD", 
-    "💳 CARDS", 
-    "📋 ACCOUNTS", 
-    "💰 REVENUE", 
-    "📒 LEDGER", 
-    "📅 CALENDAR"
+    "📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "💰 REVENUE", "📒 LEDGER", "📅 CALENDAR"
 ])
 
-# --- DASHBOARD TAB ---
+# --- DASHBOARD (unchanged, already has summaries) ---
 with tab1:
     st.header("Financial Dashboard")
-    
-    # Overview Section
     st.subheader("📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
-    
     if not st.session_state.cards_df.empty:
         total_limit = st.session_state.cards_df['Limit'].sum()
         total_balance = st.session_state.cards_df['Balance'].sum()
         available = total_limit - total_balance
         utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
-        
         col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
         col2.metric("Total Balance", f"${total_balance:,.2f}")
         col3.metric("Available Credit", f"${available:,.2f}")
@@ -358,16 +321,13 @@ with tab1:
         col3.metric("Available Credit", "$0.00")
         col4.metric("Utilization", "0%")
     
-    # Revenue Section
     st.subheader("🚖 Revenue")
     col1, col2, col3, col4 = st.columns(4)
-    
     if not st.session_state.revenue_df.empty:
         total_hours = st.session_state.revenue_df['Hours'].sum()
         total_earnings = st.session_state.revenue_df['Earnings'].sum()
         total_goal = st.session_state.revenue_df['Goal'].sum()
         avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
-        
         col1.metric("Total Hours", f"{total_hours:.2f}")
         col2.metric("Total Earnings", f"${total_earnings:,.2f}")
         col3.metric("Goal vs Actual", f"${total_earnings - total_goal:,.2f}")
@@ -378,15 +338,12 @@ with tab1:
         col3.metric("Goal vs Actual", "$0")
         col4.metric("Avg Hourly", "$0")
     
-    # Accounts Section
     st.subheader("📋 Accounts")
     col1, col2, col3 = st.columns(3)
-    
     if not st.session_state.accounts_df.empty:
         active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
         total_accounts = active_accounts_df['Amount'].sum()
         num_active_accounts = len(active_accounts_df)
-        
         col1.metric("Total Monthly Accounts", f"${total_accounts:,.2f}")
         col2.metric("Active Accounts", f"{num_active_accounts}")
         col3.metric("Avg Account Amount", f"${total_accounts/num_active_accounts:,.2f}" if num_active_accounts > 0 else "$0")
@@ -407,23 +364,18 @@ with tab1:
         col2.metric("Active Accounts", "0")
         col3.metric("Avg Account Amount", "$0")
     
-    # LEDGER Section
     st.subheader("📒 Current Financial Position")
     col1, col2, col3 = st.columns(3)
-    
     if not st.session_state.ledger_df.empty:
         current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
-        
         current_month = datetime.datetime.now().month
         current_year = datetime.datetime.now().year
         month_transactions = st.session_state.ledger_df[
             (pd.to_datetime(st.session_state.ledger_df['Date']).dt.month == current_month) &
             (pd.to_datetime(st.session_state.ledger_df['Date']).dt.year == current_year)
         ]
-        
         month_income = month_transactions['Debit'].sum()
         month_expenses = month_transactions['Credit'].sum()
-        
         col1.metric("Current Balance", f"${current_balance:,.2f}")
         col2.metric("MTD Income", f"${month_income:,.2f}")
         col3.metric("MTD Expenses", f"${month_expenses:,.2f}")
@@ -432,14 +384,12 @@ with tab1:
         col2.metric("MTD Income", "$0")
         col3.metric("MTD Expenses", "$0")
     
-    # Upcoming Payments
     st.subheader("📅 Upcoming Payments")
     if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
         upcoming = st.session_state.calendar_df[
             (st.session_state.calendar_df['Due Date'] >= datetime.date.today()) &
             (st.session_state.calendar_df['Status'] == 'Upcoming')
         ].head(5)
-        
         if not upcoming.empty:
             for _, payment in upcoming.iterrows():
                 days_until = (payment['Due Date'] - datetime.date.today()).days
@@ -456,7 +406,7 @@ with tab1:
     else:
         st.info("No upcoming payments")
 
-# --- CARDS TAB ---
+# --- CARDS TAB (with summary) ---
 with tab2:
     st.header("Credit Card Management")
     
@@ -473,13 +423,37 @@ with tab2:
         }
     )
     
-    # Check if data changed and auto-save
     if not edited_cards.equals(st.session_state.cards_df):
         st.session_state.cards_df = edited_cards
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Cards', st.session_state.cards_df)
+    
+    # Summary cards
+    st.markdown("---")
+    st.subheader("📊 Card Summary")
+    if not st.session_state.cards_df.empty:
+        col1, col2, col3, col4 = st.columns(4)
+        total_limit = st.session_state.cards_df['Limit'].sum()
+        total_balance = st.session_state.cards_df['Balance'].sum()
+        available = total_limit - total_balance
+        utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
+        col1.metric("Total Limit", f"${total_limit:,.2f}")
+        col2.metric("Total Balance", f"${total_balance:,.2f}")
+        col3.metric("Available Credit", f"${available:,.2f}")
+        col4.metric("Overall Utilization", f"{utilization:.1f}%")
+        
+        # Per‑card breakdown
+        with st.expander("💳 Per‑Card Details"):
+            card_summary = st.session_state.cards_df.copy()
+            card_summary['Utilization'] = (card_summary['Balance'] / card_summary['Limit'] * 100).round(1)
+            card_summary['Balance'] = card_summary['Balance'].apply(lambda x: f"${x:,.2f}")
+            card_summary['Limit'] = card_summary['Limit'].apply(lambda x: f"${x:,.2f}")
+            card_summary['Utilization'] = card_summary['Utilization'].apply(lambda x: f"{x}%")
+            st.dataframe(card_summary, use_container_width=True, hide_index=True)
+    else:
+        st.info("No card data")
 
-# --- ACCOUNTS TAB ---
+# --- ACCOUNTS TAB (restored full summary) ---
 with tab3:
     st.header("Account Management")
     st.info("📋 All 13 monthly accounts - Edit as needed")
@@ -508,22 +482,66 @@ with tab3:
             }
         )
         
-        # Check if data changed and auto-save
         if not edited_accounts.equals(st.session_state.accounts_df):
             st.session_state.accounts_df = edited_accounts
             if st.session_state.spreadsheet:
                 auto_save_to_gsheets('Accounts', st.session_state.accounts_df)
-            # Update calendar when accounts change
             current_date = datetime.datetime.now()
             st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
+        
+        # --- RESTORED SUMMARY STATISTICS ---
+        st.markdown("---")
+        st.subheader("📊 Account Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        active_accounts = edited_accounts[edited_accounts['Active'] == 'Yes']
+        inactive_accounts = edited_accounts[edited_accounts['Active'] == 'No']
+        total_active = active_accounts['Amount'].sum()
+        total_inactive = inactive_accounts['Amount'].sum()
+        col1.metric("Total Active Accounts", f"${total_active:,.2f}")
+        col2.metric("Total Inactive Accounts", f"${total_inactive:,.2f}")
+        col3.metric("Number Active", f"{len(active_accounts)}")
+        col4.metric("Number Inactive", f"{len(inactive_accounts)}")
+        
+        st.subheader("⚠️ Late Fee Exposure")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Late Fee Risk", f"${active_accounts['Late Fee'].sum():,.2f}")
+        col2.metric("Accounts with Late Fees", f"{len(active_accounts[active_accounts['Late Fee'] > 0])}")
+        avg_late = active_accounts[active_accounts['Late Fee'] > 0]['Late Fee'].mean() if len(active_accounts[active_accounts['Late Fee'] > 0]) > 0 else 0
+        col3.metric("Avg Late Fee", f"${avg_late:,.2f}")
+        
+        st.subheader("🤖 Auto-Pay Status")
+        col1, col2 = st.columns(2)
+        auto_pay_count = len(active_accounts[active_accounts['Auto Pay'] == 'Yes'])
+        col1.metric("Accounts on Auto-Pay", f"{auto_pay_count}")
+        col2.metric("Manual Payments", f"{len(active_accounts) - auto_pay_count}")
+        
+        with st.expander("📊 Accounts by Category"):
+            category_summary = active_accounts.groupby('Category').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            category_summary.columns = ['Total Amount', 'Number of Accounts']
+            category_summary['Total Amount'] = category_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(category_summary, use_container_width=True)
+        
+        with st.expander("💳 Accounts by Card"):
+            card_summary = active_accounts.groupby('Pay Via').agg({
+                'Amount': ['sum', 'count']
+            }).round(2)
+            card_summary.columns = ['Total Amount', 'Number of Accounts']
+            card_summary['Total Amount'] = card_summary['Total Amount'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(card_summary, use_container_width=True)
+        
+        if st.button("Save Accounts", key="save_accounts"):
+            st.success("Accounts saved successfully!")
+    else:
+        st.warning("No account data available")
 
-# --- REVENUE TAB ---
+# --- REVENUE TAB (restored weekly breakdown and summary) ---
 with tab4:
     st.header("💰 Revenue Tracker")
     
-    # Action buttons
     col1, col2, col3 = st.columns([1, 1, 4])
-    
     with col1:
         if st.button("↩️ Undo", key="undo_revenue"):
             if st.session_state.revenue_history:
@@ -531,7 +549,6 @@ with tab4:
                 if st.session_state.spreadsheet:
                     auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
                 st.rerun()
-    
     with col2:
         if st.button("🔄 Update", key="update_revenue"):
             df = st.session_state.revenue_df.copy()
@@ -560,20 +577,87 @@ with tab4:
         hide_index=True
     )
     
-    # Check if data changed and auto-save
     if not edited_revenue.equals(st.session_state.revenue_df):
         st.session_state.revenue_df = edited_revenue
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+    
+    # --- RESTORED SUMMARY ---
+    st.markdown("---")
+    st.subheader("📊 Summary")
+    
+    total_hours = st.session_state.revenue_df['Hours'].sum()
+    total_earnings = st.session_state.revenue_df['Earnings'].sum()
+    total_goal = st.session_state.revenue_df['Goal'].sum()
+    total_diff = total_earnings - total_goal
+    
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Hours", f"{total_hours:.2f}")
+    col2.metric("Total Earnings", f"${total_earnings:,.2f}")
+    col3.metric("Total Goal", f"${total_goal:,.2f}")
+    if total_diff >= 0:
+        col4.metric("Net vs Goal", f"+${total_diff:,.2f}", delta=f"+${total_diff:,.2f}")
+    else:
+        col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
+    
+    days_above = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] >= st.session_state.revenue_df['Goal']])
+    days_below = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] < st.session_state.revenue_df['Goal']])
+    success_rate = (days_above / len(st.session_state.revenue_df) * 100) if len(st.session_state.revenue_df) > 0 else 0
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Days Above Goal", f"{days_above}")
+    col2.metric("Days Below Goal", f"{days_below}")
+    col3.metric("Success Rate", f"{success_rate:.1f}%")
+    
+    # Weekly breakdown
+    if len(st.session_state.revenue_df) >= 7:
+        with st.expander("📋 Weekly Breakdown"):
+            df = st.session_state.revenue_df.copy()
+            num_weeks = (len(df) + 6) // 7
+            for week_num in range(num_weeks):
+                start_idx = week_num * 7
+                end_idx = min((week_num + 1) * 7, len(df))
+                week_data = df.iloc[start_idx:end_idx]
+                st.write(f"**Week {week_num + 1}**")
+                w1, w2, w3, w4 = st.columns(4)
+                w1.metric("Hours", f"{week_data['Hours'].sum():.2f}")
+                w2.metric("Earnings", f"${week_data['Earnings'].sum():,.2f}")
+                w3.metric("Goal", f"${week_data['Goal'].sum():,.2f}")
+                week_diff = week_data['Earnings'].sum() - week_data['Goal'].sum()
+                if week_diff >= 0:
+                    w4.metric("Net", f"+${week_diff:,.2f}", delta=f"+${week_diff:,.2f}")
+                else:
+                    w4.metric("Net", f"-${abs(week_diff):,.2f}", delta=f"-${abs(week_diff):,.2f}", delta_color="inverse")
+    
+    # Add Week button
+    if st.button("📅 Add Week", key="add_week"):
+        st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        current_date = datetime.datetime.now()
+        week_rows = []
+        for i, day in enumerate(days):
+            week_date = current_date + datetime.timedelta(days=i)
+            week_rows.append({
+                'Day': day,
+                'Date': week_date.strftime("%Y-%m-%d"),
+                'Hours': 0.0,
+                'Earnings': 0.0,
+                'Goal': 175.0
+            })
+        week_df = pd.DataFrame(week_rows)
+        week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
+        week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
+        st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
+        if st.session_state.spreadsheet:
+            auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+        st.rerun()
 
-# --- LEDGER TAB ---
+# --- LEDGER TAB (already has summaries, keep as is) ---
 with tab5:
     st.header("📒 Accounting Ledger")
     st.info("Double-Entry Style: Debits (Income In) | Credits (Expenses Out) | Running Balance")
     
-    # Action buttons
     col1, col2, col3 = st.columns([1, 1, 4])
-    
     with col1:
         if st.button("➕ Income", key="add_income"):
             new_row = pd.DataFrame({
@@ -591,7 +675,6 @@ with tab5:
             if st.session_state.spreadsheet:
                 auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
             st.rerun()
-    
     with col2:
         if st.button("💸 Expense", key="add_expense"):
             new_row = pd.DataFrame({
@@ -610,12 +693,7 @@ with tab5:
                 auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
             st.rerun()
     
-    # Date filter
-    filter_option = st.selectbox(
-        "Filter by",
-        ["All Time", "This Month", "Last Month", "This Year"]
-    )
-    
+    filter_option = st.selectbox("Filter by", ["All Time", "This Month", "Last Month", "This Year"])
     filtered_df = st.session_state.ledger_df.copy()
     if filter_option == "This Month":
         current_month = datetime.datetime.now().month
@@ -637,7 +715,6 @@ with tab5:
         current_year = datetime.datetime.now().year
         filtered_df = filtered_df[pd.to_datetime(filtered_df['Date']).dt.year == current_year]
     
-    # Recalculate balance for filtered view
     if not filtered_df.empty:
         filtered_df = filtered_df.sort_values('Date')
         filtered_df['Balance'] = filtered_df['Debit'].cumsum() - filtered_df['Credit'].cumsum()
@@ -648,55 +725,18 @@ with tab5:
         use_container_width=True,
         key="ledger_editor",
         column_config={
-            "Date": st.column_config.DateColumn(
-                "Date",
-                min_value=datetime.date(2020, 1, 1),
-                max_value=datetime.date(2030, 12, 31),
-                format="MM/DD/YYYY",
-                required=True
-            ),
-            "Description": st.column_config.TextColumn(
-                "Description",
-                width="medium",
-                required=True
-            ),
-            "Category": st.column_config.SelectboxColumn(
-                "Category",
-                width="medium",
-                options=st.session_state.ledger_categories,
-                required=True
-            ),
-            "Debit": st.column_config.NumberColumn(
-                "Debit (Income) $",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Credit": st.column_config.NumberColumn(
-                "Credit (Expense) $",
-                min_value=0.0,
-                step=0.01,
-                format="$%.2f"
-            ),
-            "Payment Method": st.column_config.SelectboxColumn(
-                "Payment Method",
-                width="small",
-                options=['Cash', 'Bank Transfer', 'Card1', 'Card2', 'Card3', 'Card4', 'Card5', 'Debit', 'Other']
-            ),
-            "Notes": st.column_config.TextColumn(
-                "Notes",
-                width="large"
-            ),
-            "Balance": st.column_config.NumberColumn(
-                "Running Balance",
-                disabled=True,
-                format="$%.2f"
-            )
+            "Date": st.column_config.DateColumn("Date", min_value=datetime.date(2020,1,1), max_value=datetime.date(2030,12,31), format="MM/DD/YYYY", required=True),
+            "Description": st.column_config.TextColumn("Description", width="medium", required=True),
+            "Category": st.column_config.SelectboxColumn("Category", width="medium", options=st.session_state.ledger_categories, required=True),
+            "Debit": st.column_config.NumberColumn("Debit (Income) $", min_value=0.0, step=0.01, format="$%.2f"),
+            "Credit": st.column_config.NumberColumn("Credit (Expense) $", min_value=0.0, step=0.01, format="$%.2f"),
+            "Payment Method": st.column_config.SelectboxColumn("Payment Method", width="small", options=['Cash','Bank Transfer','Card1','Card2','Card3','Card4','Card5','Debit','Other']),
+            "Notes": st.column_config.TextColumn("Notes", width="large"),
+            "Balance": st.column_config.NumberColumn("Running Balance", disabled=True, format="$%.2f")
         },
         hide_index=True
     )
     
-    # Check if data changed and auto-save
     if not edited_ledger.equals(st.session_state.ledger_df):
         edited_ledger = edited_ledger.sort_values('Date')
         edited_ledger['Balance'] = edited_ledger['Debit'].cumsum() - edited_ledger['Credit'].cumsum()
@@ -704,31 +744,23 @@ with tab5:
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Ledger', st.session_state.ledger_df)
     
-    # Summary statistics
     st.markdown("---")
     st.subheader("📊 Ledger Summary")
-    
     col1, col2, col3, col4 = st.columns(4)
-    
     if not st.session_state.ledger_df.empty:
         current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
         total_debits = st.session_state.ledger_df['Debit'].sum()
         total_credits = st.session_state.ledger_df['Credit'].sum()
         transaction_count = len(st.session_state.ledger_df)
-        
         col1.metric("Current Balance", f"${current_balance:,.2f}")
         col2.metric("Total Income (Debits)", f"${total_debits:,.2f}")
         col3.metric("Total Expenses (Credits)", f"${total_credits:,.2f}")
         col4.metric("# of Transactions", f"{transaction_count}")
         
-        # Income vs Expense breakdown
         col1, col2 = st.columns(2)
-        
         with col1:
             st.subheader("💰 Income by Category")
-            income_summary = st.session_state.ledger_df[st.session_state.ledger_df['Debit'] > 0].groupby('Category').agg({
-                'Debit': ['sum', 'count']
-            }).round(2)
+            income_summary = st.session_state.ledger_df[st.session_state.ledger_df['Debit'] > 0].groupby('Category').agg({'Debit':['sum','count']}).round(2)
             if not income_summary.empty:
                 income_summary.columns = ['Total', '# of Transactions']
                 income_summary = income_summary.sort_values('Total', ascending=False)
@@ -736,12 +768,9 @@ with tab5:
                 st.dataframe(income_summary, use_container_width=True)
             else:
                 st.info("No income transactions")
-        
         with col2:
             st.subheader("💸 Expenses by Category")
-            expense_summary = st.session_state.ledger_df[st.session_state.ledger_df['Credit'] > 0].groupby('Category').agg({
-                'Credit': ['sum', 'count']
-            }).round(2)
+            expense_summary = st.session_state.ledger_df[st.session_state.ledger_df['Credit'] > 0].groupby('Category').agg({'Credit':['sum','count']}).round(2)
             if not expense_summary.empty:
                 expense_summary.columns = ['Total', '# of Transactions']
                 expense_summary = expense_summary.sort_values('Total', ascending=False)
@@ -755,72 +784,39 @@ with tab5:
         col3.metric("Total Expenses", "$0")
         col4.metric("# of Transactions", "0")
 
-# --- CALENDAR TAB ---
+# --- CALENDAR TAB (restored summary) ---
 with tab6:
     st.header("📅 Editable Calendar")
     
-    # Month and year selector
-    col1, col2, col3 = st.columns([1, 1, 2])
+    col1, col2, col3 = st.columns([1,1,2])
     current_date = datetime.datetime.now()
-    
     with col1:
-        selected_month = st.selectbox(
-            "Month",
-            range(1, 13),
-            index=current_date.month - 1,
-            format_func=lambda x: calendar.month_name[x]
-        )
-    
+        selected_month = st.selectbox("Month", range(1,13), index=current_date.month-1, format_func=lambda x: calendar.month_name[x])
     with col2:
         selected_year = st.number_input("Year", min_value=2024, max_value=2030, value=current_date.year)
     
-    # Update calendar when month/year changes
     if st.button("📅 Load Month", key="load_month"):
         st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
         st.rerun()
     
-    # Notification Settings
     with st.expander("🔔 Notification Settings"):
         col1, col2 = st.columns(2)
         with col1:
-            st.session_state.notification_settings['email_notifications'] = st.checkbox(
-                "Enable Email Notifications",
-                value=st.session_state.notification_settings['email_notifications']
-            )
+            st.session_state.notification_settings['email_notifications'] = st.checkbox("Enable Email Notifications", value=st.session_state.notification_settings['email_notifications'])
             if st.session_state.notification_settings['email_notifications']:
-                st.session_state.notification_settings['notification_email'] = st.text_input(
-                    "Email Address",
-                    value=st.session_state.notification_settings['notification_email']
-                )
-        
+                st.session_state.notification_settings['notification_email'] = st.text_input("Email Address", value=st.session_state.notification_settings['notification_email'])
         with col2:
-            st.session_state.notification_settings['sms_notifications'] = st.checkbox(
-                "Enable SMS Notifications",
-                value=st.session_state.notification_settings['sms_notifications']
-            )
+            st.session_state.notification_settings['sms_notifications'] = st.checkbox("Enable SMS Notifications", value=st.session_state.notification_settings['sms_notifications'])
             if st.session_state.notification_settings['sms_notifications']:
-                st.session_state.notification_settings['notification_phone'] = st.text_input(
-                    "Phone Number",
-                    value=st.session_state.notification_settings['notification_phone']
-                )
-        
-        st.session_state.notification_settings['days_before_due'] = st.slider(
-            "Days Before Due to Notify",
-            min_value=1,
-            max_value=14,
-            value=st.session_state.notification_settings['days_before_due']
-        )
-        
+                st.session_state.notification_settings['notification_phone'] = st.text_input("Phone Number", value=st.session_state.notification_settings['notification_phone'])
+        st.session_state.notification_settings['days_before_due'] = st.slider("Days Before Due to Notify", min_value=1, max_value=14, value=st.session_state.notification_settings['days_before_due'])
         if st.button("Save Notification Settings"):
             st.success("Notification settings saved!")
-            # Recreate calendar to update notification dates
             st.session_state.calendar_df = create_calendar_safe(selected_month, selected_year)
             st.rerun()
     
-    # Display calendar
     if 'calendar_df' in st.session_state and not st.session_state.calendar_df.empty:
         st.subheader(f"Schedule - {calendar.month_name[selected_month]} {selected_year}")
-        
         edited_calendar = st.data_editor(
             st.session_state.calendar_df,
             num_rows="dynamic",
@@ -833,21 +829,43 @@ with tab6:
                 "Pay Via": st.column_config.TextColumn("Pay Via", width="small"),
                 "Category": st.column_config.TextColumn("Category", width="small", disabled=True),
                 "Late Fee": st.column_config.NumberColumn("Late Fee", format="$%.2f", disabled=True),
-                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes', 'No']),
-                "Notification": st.column_config.SelectboxColumn("Notify", options=['Yes', 'No']),
-                "Status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=['Upcoming', 'Paid', 'Skipped', 'Pending']
-                ),
+                "Auto Pay": st.column_config.SelectboxColumn("Auto Pay", options=['Yes','No']),
+                "Notification": st.column_config.SelectboxColumn("Notify", options=['Yes','No']),
+                "Status": st.column_config.SelectboxColumn("Status", options=['Upcoming','Paid','Skipped','Pending']),
                 "Payment Date": st.column_config.DateColumn("Payment Date"),
                 "Notes": st.column_config.TextColumn("Notes"),
                 "Notify By": st.column_config.DateColumn("Notify By", disabled=True)
             },
             hide_index=True
         )
-        
-        # Update calendar when edited
         if not edited_calendar.equals(st.session_state.calendar_df):
             st.session_state.calendar_df = edited_calendar
+        
+        # --- RESTORED CALENDAR SUMMARY ---
+        st.markdown("---")
+        st.subheader("📊 Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        total_due = edited_calendar[edited_calendar['Status'] == 'Upcoming']['Amount'].sum()
+        total_paid = edited_calendar[edited_calendar['Status'] == 'Paid']['Amount'].sum()
+        upcoming_count = len(edited_calendar[edited_calendar['Status'] == 'Upcoming'])
+        paid_count = len(edited_calendar[edited_calendar['Status'] == 'Paid'])
+        col1.metric("Total Due", f"${total_due:,.2f}")
+        col2.metric("Total Paid", f"${total_paid:,.2f}")
+        col3.metric("Upcoming", f"{upcoming_count}")
+        col4.metric("Completed", f"{paid_count}")
+        
+        st.subheader("🔔 Upcoming Notifications")
+        today = datetime.date.today()
+        upcoming_notifications = edited_calendar[
+            (edited_calendar['Notification'] == 'Yes') &
+            (edited_calendar['Notify By'] <= today) &
+            (edited_calendar['Status'] == 'Upcoming')
+        ]
+        if not upcoming_notifications.empty:
+            for _, notification in upcoming_notifications.iterrows():
+                days_until = (notification['Due Date'] - today).days
+                st.warning(f"**{notification['Account']}** - ${notification['Amount']:,.2f} due in {days_until} days ({notification['Due Date'].strftime('%m/%d')})")
+        else:
+            st.info("No upcoming notifications")
     else:
         st.info("No active accounts to display in calendar")
