@@ -301,9 +301,10 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 DASHBOARD", "💳 CARDS", "📋 ACCOUNTS", "💰 REVENUE", "📒 LEDGER", "📅 CALENDAR"
 ])
 
-# --- DASHBOARD (unchanged, already has summaries) ---
+# --- DASHBOARD TAB ---
 with tab1:
     st.header("Financial Dashboard")
+    
     st.subheader("📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
     if not st.session_state.cards_df.empty:
@@ -406,7 +407,7 @@ with tab1:
     else:
         st.info("No upcoming payments")
 
-# --- CARDS TAB (with summary) ---
+# --- CARDS TAB ---
 with tab2:
     st.header("Credit Card Management")
     
@@ -428,7 +429,7 @@ with tab2:
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Cards', st.session_state.cards_df)
     
-    # Summary cards
+    # Summary
     st.markdown("---")
     st.subheader("📊 Card Summary")
     if not st.session_state.cards_df.empty:
@@ -442,7 +443,6 @@ with tab2:
         col3.metric("Available Credit", f"${available:,.2f}")
         col4.metric("Overall Utilization", f"{utilization:.1f}%")
         
-        # Per‑card breakdown
         with st.expander("💳 Per‑Card Details"):
             card_summary = st.session_state.cards_df.copy()
             card_summary['Utilization'] = (card_summary['Balance'] / card_summary['Limit'] * 100).round(1)
@@ -453,7 +453,7 @@ with tab2:
     else:
         st.info("No card data")
 
-# --- ACCOUNTS TAB (restored full summary) ---
+# --- ACCOUNTS TAB ---
 with tab3:
     st.header("Account Management")
     st.info("📋 All 13 monthly accounts - Edit as needed")
@@ -489,7 +489,7 @@ with tab3:
             current_date = datetime.datetime.now()
             st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
         
-        # --- RESTORED SUMMARY STATISTICS ---
+        # Summary
         st.markdown("---")
         st.subheader("📊 Account Summary")
         
@@ -537,31 +537,39 @@ with tab3:
     else:
         st.warning("No account data available")
 
-# --- REVENUE TAB (restored weekly breakdown and summary) ---
+# --- REVENUE TAB (Fixed double-entry issue) ---
 with tab4:
     st.header("💰 Revenue Tracker")
+    
+    # Create an editing copy in session state if not exists or if main data changed
+    if 'revenue_edit_df' not in st.session_state or not st.session_state.revenue_edit_df.equals(st.session_state.revenue_df):
+        st.session_state.revenue_edit_df = st.session_state.revenue_df.copy()
     
     col1, col2, col3 = st.columns([1, 1, 4])
     with col1:
         if st.button("↩️ Undo", key="undo_revenue"):
             if st.session_state.revenue_history:
                 st.session_state.revenue_df = st.session_state.revenue_history.pop()
+                st.session_state.revenue_edit_df = st.session_state.revenue_df.copy()
                 if st.session_state.spreadsheet:
                     auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
                 st.rerun()
     with col2:
         if st.button("🔄 Update", key="update_revenue"):
-            df = st.session_state.revenue_df.copy()
+            # Recalculate differences and status from edit copy
+            df = st.session_state.revenue_edit_df.copy()
             df['Difference'] = df['Earnings'] - df['Goal']
             df['Status'] = df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
             st.session_state.revenue_history.append(st.session_state.revenue_df.copy())
             st.session_state.revenue_df = df
+            st.session_state.revenue_edit_df = df.copy()
             if st.session_state.spreadsheet:
                 auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
             st.rerun()
     
+    # Data editor using the editing copy
     edited_revenue = st.data_editor(
-        st.session_state.revenue_df,
+        st.session_state.revenue_edit_df,
         num_rows="dynamic",
         use_container_width=True,
         key="revenue_editor",
@@ -577,18 +585,18 @@ with tab4:
         hide_index=True
     )
     
-    if not edited_revenue.equals(st.session_state.revenue_df):
-        st.session_state.revenue_df = edited_revenue
-        if st.session_state.spreadsheet:
-            auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
+    # Update the editing copy with any changes made in the editor
+    if not edited_revenue.equals(st.session_state.revenue_edit_df):
+        st.session_state.revenue_edit_df = edited_revenue
     
-    # --- RESTORED SUMMARY ---
+    # Summary
     st.markdown("---")
     st.subheader("📊 Summary")
     
-    total_hours = st.session_state.revenue_df['Hours'].sum()
-    total_earnings = st.session_state.revenue_df['Earnings'].sum()
-    total_goal = st.session_state.revenue_df['Goal'].sum()
+    df_display = st.session_state.revenue_df
+    total_hours = df_display['Hours'].sum()
+    total_earnings = df_display['Earnings'].sum()
+    total_goal = df_display['Goal'].sum()
     total_diff = total_earnings - total_goal
     
     col1, col2, col3, col4 = st.columns(4)
@@ -600,9 +608,9 @@ with tab4:
     else:
         col4.metric("Net vs Goal", f"-${abs(total_diff):,.2f}", delta=f"-${abs(total_diff):,.2f}", delta_color="inverse")
     
-    days_above = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] >= st.session_state.revenue_df['Goal']])
-    days_below = len(st.session_state.revenue_df[st.session_state.revenue_df['Earnings'] < st.session_state.revenue_df['Goal']])
-    success_rate = (days_above / len(st.session_state.revenue_df) * 100) if len(st.session_state.revenue_df) > 0 else 0
+    days_above = len(df_display[df_display['Earnings'] >= df_display['Goal']])
+    days_below = len(df_display[df_display['Earnings'] < df_display['Goal']])
+    success_rate = (days_above / len(df_display) * 100) if len(df_display) > 0 else 0
     
     col1, col2, col3 = st.columns(3)
     col1.metric("Days Above Goal", f"{days_above}")
@@ -610,9 +618,9 @@ with tab4:
     col3.metric("Success Rate", f"{success_rate:.1f}%")
     
     # Weekly breakdown
-    if len(st.session_state.revenue_df) >= 7:
+    if len(df_display) >= 7:
         with st.expander("📋 Weekly Breakdown"):
-            df = st.session_state.revenue_df.copy()
+            df = df_display.copy()
             num_weeks = (len(df) + 6) // 7
             for week_num in range(num_weeks):
                 start_idx = week_num * 7
@@ -648,11 +656,12 @@ with tab4:
         week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
         week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
         st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
+        st.session_state.revenue_edit_df = st.session_state.revenue_df.copy()
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
         st.rerun()
 
-# --- LEDGER TAB (already has summaries, keep as is) ---
+# --- LEDGER TAB ---
 with tab5:
     st.header("📒 Accounting Ledger")
     st.info("Double-Entry Style: Debits (Income In) | Credits (Expenses Out) | Running Balance")
@@ -784,7 +793,7 @@ with tab5:
         col3.metric("Total Expenses", "$0")
         col4.metric("# of Transactions", "0")
 
-# --- CALENDAR TAB (restored summary) ---
+# --- CALENDAR TAB ---
 with tab6:
     st.header("📅 Editable Calendar")
     
@@ -841,7 +850,7 @@ with tab6:
         if not edited_calendar.equals(st.session_state.calendar_df):
             st.session_state.calendar_df = edited_calendar
         
-        # --- RESTORED CALENDAR SUMMARY ---
+        # Summary
         st.markdown("---")
         st.subheader("📊 Summary")
         col1, col2, col3, col4 = st.columns(4)
