@@ -13,19 +13,16 @@ except ImportError:
     GSHEETS_AVAILABLE = False
     st.warning("Google Sheets integration not available. Data will not persist across devices.")
 
-# This must be the first Streamlit command
 st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
 # --- GOOGLE SHEETS CONNECTION (only if available) ---
 @st.cache_resource
 def connect_to_gsheets():
-    """Connect to Google Sheets using Streamlit Cloud secrets"""
     if not GSHEETS_AVAILABLE:
         return None
     try:
         scope = ['https://spreadsheets.google.com/feeds',
                  'https://www.googleapis.com/auth/drive']
-        
         credentials = {
             "type": st.secrets["gsheets"]["type"],
             "project_id": st.secrets["gsheets"]["project_id"],
@@ -38,20 +35,15 @@ def connect_to_gsheets():
             "auth_provider_x509_cert_url": st.secrets["gsheets"]["auth_provider_x509_cert_url"],
             "client_x509_cert_url": st.secrets["gsheets"]["client_x509_cert_url"]
         }
-        
         creds = Credentials.from_service_account_info(credentials, scopes=scope)
         client = gspread.authorize(creds)
-        
-        # Try to open existing spreadsheet or create new one
         try:
             spreadsheet = client.open('Strategic Capital Terminal Data')
         except:
             spreadsheet = client.create('Strategic Capital Terminal Data')
             spreadsheet.share(st.secrets["gsheets"]["client_email"], perm_type='user', role='writer')
-        
         return spreadsheet
-    except Exception as e:
-        st.error(f"⚠️ Failed to connect to Google Sheets. Using local storage only.")
+    except:
         return None
 
 # --- AUTO-SAVE FUNCTION ---
@@ -63,13 +55,11 @@ def auto_save_to_gsheets(sheet_name, df):
             worksheet = st.session_state.spreadsheet.worksheet(sheet_name)
         except:
             worksheet = st.session_state.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
-        
         df_copy = df.copy()
         for col in df_copy.columns:
             if df_copy[col].dtype == 'object' and len(df_copy) > 0:
                 if isinstance(df_copy[col].iloc[0], (datetime.date, datetime.datetime)):
                     df_copy[col] = df_copy[col].astype(str)
-        
         worksheet.clear()
         worksheet.update([df_copy.columns.values.tolist()] + df_copy.values.tolist())
         st.session_state.last_save[sheet_name] = time.time()
@@ -416,7 +406,6 @@ with tab1:
 with tab2:
     st.header("Credit Card Management")
     
-    # Helper function to get danger level based on utilization
     def get_danger_level(util):
         if util < 0.1:
             return "✅ Safe"
@@ -427,7 +416,6 @@ with tab2:
         else:
             return "🚨 DANGER"
     
-    # Create a copy for display with calculated fields
     display_cards = st.session_state.cards_df.copy()
     if not display_cards.empty:
         display_cards['Utilization'] = (display_cards['Balance'] / display_cards['Limit'] * 100).round(1)
@@ -453,7 +441,6 @@ with tab2:
         }
     )
     
-    # Remove calculated columns before saving back to session state
     save_cols = ['Card', 'Bank', 'Limit', 'Balance', 'APR', 'Statement Day', 'Due Day', 'Credit Report Day', 'Active']
     if not edited_cards.empty:
         edited_cards = edited_cards[save_cols]
@@ -463,7 +450,6 @@ with tab2:
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Cards', st.session_state.cards_df)
     
-    # Summary
     st.markdown("---")
     st.subheader("📊 Card Summary")
     if not st.session_state.cards_df.empty:
@@ -477,7 +463,6 @@ with tab2:
         col3.metric("Available Credit", f"${available:,.2f}")
         col4.metric("Overall Utilization", f"{utilization:.1f}%")
         
-        # Danger level breakdown
         danger_counts = {}
         for _, row in st.session_state.cards_df.iterrows():
             util = row['Balance'] / row['Limit'] if row['Limit'] > 0 else 0
@@ -527,7 +512,6 @@ with tab3:
             current_date = datetime.datetime.now()
             st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
         
-        # Summary
         st.markdown("---")
         st.subheader("📊 Account Summary")
         
@@ -575,12 +559,14 @@ with tab3:
     else:
         st.warning("No account data available")
 
-# --- REVENUE TAB (fixed auto-update) ---
+# --- REVENUE TAB (fixed auto-update + navigation instructions) ---
 with tab4:
     st.header("💰 Revenue Tracker")
-    st.caption("💡 Tip: Press **Tab** to move to the next cell to the right (horizontally).")
+    st.info(
+        "**Navigation:** Press **Tab** to move **right** (Hours → Earnings → Goal → next row's Hours). "
+        "Press **Enter** to move **down**. Difference and Status update automatically."
+    )
     
-    # Data editor using the main dataframe
     edited_revenue = st.data_editor(
         st.session_state.revenue_df,
         num_rows="dynamic",
@@ -600,7 +586,6 @@ with tab4:
     
     # If data changed, recalc derived columns, update session state, save, and rerun
     if not edited_revenue.equals(st.session_state.revenue_df):
-        # Recalculate Difference and Status
         edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
         edited_revenue['Status'] = edited_revenue['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
         st.session_state.revenue_df = edited_revenue
@@ -868,7 +853,6 @@ with tab6:
         if not edited_calendar.equals(st.session_state.calendar_df):
             st.session_state.calendar_df = edited_calendar
         
-        # Summary
         st.markdown("---")
         st.subheader("📊 Summary")
         col1, col2, col3, col4 = st.columns(4)
