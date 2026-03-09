@@ -295,7 +295,7 @@ def create_calendar_safe(month, year):
 
 init_session_state()
 
-# --- AUTO‑UPDATE CALENDAR ON MONTH CHANGE (NEW) ---
+# --- AUTO‑UPDATE CALENDAR ON MONTH CHANGE ---
 def auto_update_calendar():
     today = datetime.date.today()
     current_month = today.month
