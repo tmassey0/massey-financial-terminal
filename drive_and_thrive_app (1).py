@@ -15,6 +15,14 @@ except ImportError:
 
 st.set_page_config(page_title="STRATEGIC CAPITAL TERMINAL", layout="wide")
 
+# --- HELPER: ensure numeric columns are actually numbers ---
+def ensure_numeric(df, columns):
+    """Convert given columns to numeric, coercing errors to NaN."""
+    for col in columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
 # --- GOOGLE SHEETS CONNECTION (only if available) ---
 @st.cache_resource
 def connect_to_gsheets():
@@ -76,6 +84,7 @@ def load_from_gsheets(sheet_name, default_df):
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
+            # Try to convert every column to numeric if possible
             for col in df.columns:
                 try:
                     df[col] = pd.to_numeric(df[col], errors='ignore')
@@ -303,8 +312,11 @@ with tab1:
     st.subheader("📈 Overview")
     col1, col2, col3, col4 = st.columns(4)
     if not st.session_state.cards_df.empty:
-        total_limit = st.session_state.cards_df['Limit'].sum()
-        total_balance = st.session_state.cards_df['Balance'].sum()
+        # Ensure numeric before summing
+        cards = st.session_state.cards_df.copy()
+        cards = ensure_numeric(cards, ['Limit', 'Balance'])
+        total_limit = cards['Limit'].sum()
+        total_balance = cards['Balance'].sum()
         available = total_limit - total_balance
         utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
         col1.metric("Total Credit Limit", f"${total_limit:,.2f}")
@@ -320,9 +332,11 @@ with tab1:
     st.subheader("🚖 Revenue")
     col1, col2, col3, col4 = st.columns(4)
     if not st.session_state.revenue_df.empty:
-        total_hours = st.session_state.revenue_df['Hours'].sum()
-        total_earnings = st.session_state.revenue_df['Earnings'].sum()
-        total_goal = st.session_state.revenue_df['Goal'].sum()
+        revenue = st.session_state.revenue_df.copy()
+        revenue = ensure_numeric(revenue, ['Hours', 'Earnings', 'Goal'])
+        total_hours = revenue['Hours'].sum()
+        total_earnings = revenue['Earnings'].sum()
+        total_goal = revenue['Goal'].sum()
         avg_hourly = total_earnings / total_hours if total_hours > 0 else 0
         col1.metric("Total Hours", f"{total_hours:.2f}")
         col2.metric("Total Earnings", f"${total_earnings:,.2f}")
@@ -337,7 +351,9 @@ with tab1:
     st.subheader("📋 Accounts")
     col1, col2, col3 = st.columns(3)
     if not st.session_state.accounts_df.empty:
-        active_accounts_df = st.session_state.accounts_df[st.session_state.accounts_df['Active'] == 'Yes']
+        accounts = st.session_state.accounts_df.copy()
+        accounts = ensure_numeric(accounts, ['Amount', 'Due Day', 'Late Fee', 'Grace Days'])
+        active_accounts_df = accounts[accounts['Active'] == 'Yes']
         total_accounts = active_accounts_df['Amount'].sum()
         num_active_accounts = len(active_accounts_df)
         col1.metric("Total Monthly Accounts", f"${total_accounts:,.2f}")
@@ -363,12 +379,14 @@ with tab1:
     st.subheader("📒 Current Financial Position")
     col1, col2, col3 = st.columns(3)
     if not st.session_state.ledger_df.empty:
-        current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
+        ledger = st.session_state.ledger_df.copy()
+        ledger = ensure_numeric(ledger, ['Debit', 'Credit'])
+        current_balance = ledger['Balance'].iloc[-1]
         current_month = datetime.datetime.now().month
         current_year = datetime.datetime.now().year
-        month_transactions = st.session_state.ledger_df[
-            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.month == current_month) &
-            (pd.to_datetime(st.session_state.ledger_df['Date']).dt.year == current_year)
+        month_transactions = ledger[
+            (pd.to_datetime(ledger['Date']).dt.month == current_month) &
+            (pd.to_datetime(ledger['Date']).dt.year == current_year)
         ]
         month_income = month_transactions['Debit'].sum()
         month_expenses = month_transactions['Credit'].sum()
@@ -416,8 +434,11 @@ with tab2:
         else:
             return "🚨 DANGER"
     
+    # Prepare display DataFrame
     display_cards = st.session_state.cards_df.copy()
     if not display_cards.empty:
+        # Ensure numeric for calculations
+        display_cards = ensure_numeric(display_cards, ['Limit', 'Balance'])
         display_cards['Utilization'] = (display_cards['Balance'] / display_cards['Limit'] * 100).round(1)
         display_cards['Danger Level'] = display_cards['Utilization'].apply(lambda x: get_danger_level(x/100))
     
@@ -445,17 +466,23 @@ with tab2:
     if not edited_cards.empty:
         edited_cards = edited_cards[save_cols]
     
+    # --- FIX: ensure numeric columns after edit ---
     if not edited_cards.equals(st.session_state.cards_df):
         st.session_state.cards_df = edited_cards
+        # Force numeric conversion on key columns
+        numeric_cols = ['Limit', 'Balance', 'APR', 'Statement Day', 'Due Day', 'Credit Report Day']
+        st.session_state.cards_df = ensure_numeric(st.session_state.cards_df, numeric_cols)
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Cards', st.session_state.cards_df)
     
     st.markdown("---")
     st.subheader("📊 Card Summary")
     if not st.session_state.cards_df.empty:
-        col1, col2, col3, col4 = st.columns(4)
-        total_limit = st.session_state.cards_df['Limit'].sum()
-        total_balance = st.session_state.cards_df['Balance'].sum()
+        # Use a clean copy for calculations
+        cards_summary = st.session_state.cards_df.copy()
+        cards_summary = ensure_numeric(cards_summary, ['Limit', 'Balance'])
+        total_limit = cards_summary['Limit'].sum()
+        total_balance = cards_summary['Balance'].sum()
         available = total_limit - total_balance
         utilization = (total_balance / total_limit * 100) if total_limit > 0 else 0
         col1.metric("Total Limit", f"${total_limit:,.2f}")
@@ -464,8 +491,14 @@ with tab2:
         col4.metric("Overall Utilization", f"{utilization:.1f}%")
         
         danger_counts = {}
-        for _, row in st.session_state.cards_df.iterrows():
-            util = row['Balance'] / row['Limit'] if row['Limit'] > 0 else 0
+        for _, row in cards_summary.iterrows():
+            # Safe extraction and division
+            limit_val = row['Limit'] if pd.notna(row['Limit']) else 0
+            balance_val = row['Balance'] if pd.notna(row['Balance']) else 0
+            if limit_val > 0:
+                util = balance_val / limit_val
+            else:
+                util = 0
             level = get_danger_level(util)
             danger_counts[level] = danger_counts.get(level, 0) + 1
         
@@ -505,8 +538,11 @@ with tab3:
             }
         )
         
+        # --- FIX: ensure numeric columns after edit ---
         if not edited_accounts.equals(st.session_state.accounts_df):
             st.session_state.accounts_df = edited_accounts
+            numeric_cols = ['Amount', 'Due Day', 'Late Fee', 'Grace Days']
+            st.session_state.accounts_df = ensure_numeric(st.session_state.accounts_df, numeric_cols)
             if st.session_state.spreadsheet:
                 auto_save_to_gsheets('Accounts', st.session_state.accounts_df)
             current_date = datetime.datetime.now()
@@ -516,8 +552,11 @@ with tab3:
         st.subheader("📊 Account Summary")
         
         col1, col2, col3, col4 = st.columns(4)
-        active_accounts = edited_accounts[edited_accounts['Active'] == 'Yes']
-        inactive_accounts = edited_accounts[edited_accounts['Active'] == 'No']
+        # Use cleaned data
+        accounts_summary = st.session_state.accounts_df.copy()
+        accounts_summary = ensure_numeric(accounts_summary, ['Amount', 'Late Fee'])
+        active_accounts = accounts_summary[accounts_summary['Active'] == 'Yes']
+        inactive_accounts = accounts_summary[accounts_summary['Active'] == 'No']
         total_active = active_accounts['Amount'].sum()
         total_inactive = inactive_accounts['Amount'].sum()
         col1.metric("Total Active Accounts", f"${total_active:,.2f}")
@@ -586,6 +625,8 @@ with tab4:
     
     # If data changed, recalc derived columns, update session state, save, and rerun
     if not edited_revenue.equals(st.session_state.revenue_df):
+        # Ensure numeric columns before calculations
+        edited_revenue = ensure_numeric(edited_revenue, ['Hours', 'Earnings', 'Goal'])
         edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
         edited_revenue['Status'] = edited_revenue['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
         st.session_state.revenue_df = edited_revenue
@@ -597,7 +638,8 @@ with tab4:
     st.markdown("---")
     st.subheader("📊 Summary")
     
-    df_display = st.session_state.revenue_df
+    df_display = st.session_state.revenue_df.copy()
+    df_display = ensure_numeric(df_display, ['Hours', 'Earnings', 'Goal'])
     total_hours = df_display['Hours'].sum()
     total_earnings = df_display['Earnings'].sum()
     total_goal = df_display['Goal'].sum()
@@ -657,6 +699,7 @@ with tab4:
                 'Goal': 175.0
             })
         week_df = pd.DataFrame(week_rows)
+        week_df = ensure_numeric(week_df, ['Hours', 'Earnings', 'Goal'])
         week_df['Difference'] = week_df['Earnings'] - week_df['Goal']
         week_df['Status'] = week_df['Difference'].apply(lambda x: '✅ Goal Met' if x >= 0 else '⚠️ Below Goal')
         st.session_state.revenue_df = pd.concat([st.session_state.revenue_df, week_df], ignore_index=True)
@@ -681,6 +724,7 @@ with tab5:
                 'Payment Method': ['Bank Transfer'],
                 'Notes': ['']
             })
+            new_row = ensure_numeric(new_row, ['Debit', 'Credit'])
             st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
             st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
             st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
@@ -698,6 +742,7 @@ with tab5:
                 'Payment Method': ['Cash'],
                 'Notes': ['']
             })
+            new_row = ensure_numeric(new_row, ['Debit', 'Credit'])
             st.session_state.ledger_df = pd.concat([st.session_state.ledger_df, new_row], ignore_index=True)
             st.session_state.ledger_df = st.session_state.ledger_df.sort_values('Date')
             st.session_state.ledger_df['Balance'] = st.session_state.ledger_df['Debit'].cumsum() - st.session_state.ledger_df['Credit'].cumsum()
@@ -707,6 +752,8 @@ with tab5:
     
     filter_option = st.selectbox("Filter by", ["All Time", "This Month", "Last Month", "This Year"])
     filtered_df = st.session_state.ledger_df.copy()
+    # Ensure numeric for filters (though dates are fine)
+    filtered_df = ensure_numeric(filtered_df, ['Debit', 'Credit'])
     if filter_option == "This Month":
         current_month = datetime.datetime.now().month
         current_year = datetime.datetime.now().year
@@ -750,6 +797,7 @@ with tab5:
     )
     
     if not edited_ledger.equals(st.session_state.ledger_df):
+        edited_ledger = ensure_numeric(edited_ledger, ['Debit', 'Credit'])
         edited_ledger = edited_ledger.sort_values('Date')
         edited_ledger['Balance'] = edited_ledger['Debit'].cumsum() - edited_ledger['Credit'].cumsum()
         st.session_state.ledger_df = edited_ledger
@@ -760,10 +808,12 @@ with tab5:
     st.subheader("📊 Ledger Summary")
     col1, col2, col3, col4 = st.columns(4)
     if not st.session_state.ledger_df.empty:
-        current_balance = st.session_state.ledger_df['Balance'].iloc[-1]
-        total_debits = st.session_state.ledger_df['Debit'].sum()
-        total_credits = st.session_state.ledger_df['Credit'].sum()
-        transaction_count = len(st.session_state.ledger_df)
+        ledger_summary = st.session_state.ledger_df.copy()
+        ledger_summary = ensure_numeric(ledger_summary, ['Debit', 'Credit'])
+        current_balance = ledger_summary['Balance'].iloc[-1]
+        total_debits = ledger_summary['Debit'].sum()
+        total_credits = ledger_summary['Credit'].sum()
+        transaction_count = len(ledger_summary)
         col1.metric("Current Balance", f"${current_balance:,.2f}")
         col2.metric("Total Income (Debits)", f"${total_debits:,.2f}")
         col3.metric("Total Expenses (Credits)", f"${total_credits:,.2f}")
@@ -772,7 +822,7 @@ with tab5:
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("💰 Income by Category")
-            income_summary = st.session_state.ledger_df[st.session_state.ledger_df['Debit'] > 0].groupby('Category').agg({'Debit':['sum','count']}).round(2)
+            income_summary = ledger_summary[ledger_summary['Debit'] > 0].groupby('Category').agg({'Debit':['sum','count']}).round(2)
             if not income_summary.empty:
                 income_summary.columns = ['Total', '# of Transactions']
                 income_summary = income_summary.sort_values('Total', ascending=False)
@@ -782,7 +832,7 @@ with tab5:
                 st.info("No income transactions")
         with col2:
             st.subheader("💸 Expenses by Category")
-            expense_summary = st.session_state.ledger_df[st.session_state.ledger_df['Credit'] > 0].groupby('Category').agg({'Credit':['sum','count']}).round(2)
+            expense_summary = ledger_summary[ledger_summary['Credit'] > 0].groupby('Category').agg({'Credit':['sum','count']}).round(2)
             if not expense_summary.empty:
                 expense_summary.columns = ['Total', '# of Transactions']
                 expense_summary = expense_summary.sort_values('Total', ascending=False)
