@@ -575,9 +575,10 @@ with tab3:
     else:
         st.warning("No account data available")
 
-# --- REVENUE TAB (auto-calc on edit, no Update button needed) ---
+# --- REVENUE TAB (fixed auto-update) ---
 with tab4:
     st.header("💰 Revenue Tracker")
+    st.caption("💡 Tip: Press **Tab** to move to the next cell to the right (horizontally).")
     
     # Data editor using the main dataframe
     edited_revenue = st.data_editor(
@@ -597,7 +598,7 @@ with tab4:
         hide_index=True
     )
     
-    # Check if data changed, recalc derived columns, and auto-save
+    # If data changed, recalc derived columns, update session state, save, and rerun
     if not edited_revenue.equals(st.session_state.revenue_df):
         # Recalculate Difference and Status
         edited_revenue['Difference'] = edited_revenue['Earnings'] - edited_revenue['Goal']
@@ -605,7 +606,7 @@ with tab4:
         st.session_state.revenue_df = edited_revenue
         if st.session_state.spreadsheet:
             auto_save_to_gsheets('Revenue', st.session_state.revenue_df)
-        # No rerun needed – the editor will display the updated dataframe on next run
+        st.rerun()  # Immediately refresh to show updated columns
     
     # Summary
     st.markdown("---")
