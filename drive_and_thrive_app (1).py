@@ -231,7 +231,7 @@ def init_session_state():
     if 'ledger_df' not in st.session_state:
         st.session_state.ledger_df = load_from_gsheets('Ledger', default_ledger_df) if st.session_state.spreadsheet else default_ledger_df
     
-    # Calendar
+    # Calendar - initial creation if not already present
     if 'calendar_df' not in st.session_state:
         current_date = datetime.datetime.now()
         st.session_state.calendar_df = create_calendar_safe(current_date.month, current_date.year)
@@ -294,6 +294,29 @@ def create_calendar_safe(month, year):
         return pd.DataFrame()
 
 init_session_state()
+
+# --- AUTO‑UPDATE CALENDAR ON MONTH CHANGE (NEW) ---
+def auto_update_calendar():
+    today = datetime.date.today()
+    current_month = today.month
+    current_year = today.year
+
+    # If no calendar exists, create one for the current month
+    if 'calendar_df' not in st.session_state or st.session_state.calendar_df.empty:
+        st.session_state.calendar_df = create_calendar_safe(current_month, current_year)
+        return
+
+    # Try to get the month/year from the first due date in the calendar
+    try:
+        first_due = st.session_state.calendar_df['Due Date'].iloc[0]
+        # If the calendar is not for the current month, regenerate it
+        if first_due.month != current_month or first_due.year != current_year:
+            st.session_state.calendar_df = create_calendar_safe(current_month, current_year)
+    except (IndexError, AttributeError, KeyError):
+        # If anything fails (e.g., empty calendar, missing column), recreate it
+        st.session_state.calendar_df = create_calendar_safe(current_month, current_year)
+
+auto_update_calendar()
 
 st.title("🏛️ Strategic Capital Terminal")
 if st.session_state.spreadsheet:
